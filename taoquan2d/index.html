@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>套圈游戏 🎯</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: radial-gradient(ellipse at center, #1a0533 0%, #050510 100%);
+      display: flex; justify-content: center; align-items: center;
+      min-height: 100vh; overflow: hidden;
+    }
+    canvas {
+      display: block; border-radius: 16px;
+      box-shadow: 0 0 60px rgba(255,180,0,0.35), 0 0 120px rgba(255,80,0,0.15);
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ─── Canvas setup ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width  = 900;
+const H = canvas.height = 580;
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+const G          = 0.32;   // gravity per frame
+const TABLE_TOP  = 400;    // y of table surface
+const PEG_H      = 60;     // peg height (above table top)
+const PEG_TOP    = TABLE_TOP - PEG_H; // 340
+const PEG_R      = 7;      // peg half-width (same for all, difficulty via distance)
+const RING_R     = 27;     // ring outer radius
+const RING_TH    = 7;      // ring stroke thickness
+const THROW_X    = 148;    // hand x
+const THROW_Y    = 325;    // hand y
+const MAX_RINGS  = 7;
+const MAX_POWER  = 17;
+const BOUNCE_DMP = 0.45;   // damping on table bounce
+
+// ─── Prize data ─────────────────────────────────────────────────────────────
+const PRIZE_CFG = [
+  { x: 490, emoji: '🧸', name: '玩具熊',  pts: 10  },
+  { x: 575, emoji: '🦆', name: '小黄鸭',  pts: 20  },
+  { x: 660, emoji: '🦄', name: '独角兽',  pts: 40  },
+  { x: 745, emoji: '👑', name: '金皇冠',  pts: 80  },
+  { x: 830, emoji: '💎', name: '宝石',    pts: 150 },
+];
+
+// ─── Stars (background) ─────────────────────────────────────────────────────
+const STARS = Array.from({length: 60}, () => ({
+  x: Math.random() * W, y: Math.random() * TABLE_TOP * 0.9,
+  r: Math.random() * 1.5 + 0.3,
+  twinkle: Math.random() * Math.PI * 2,
+}));
+
+// ─── Game State ─────────────────────────────────────────────────────────────
+let G_STATE;
+function mkState() {
+  return {
+    phase: 'title',   // title | play | over
+    score: 0,
+    ringsLeft: MAX_RINGS,
+    combo: 0,
+    prizes: PRIZE_CFG.map(c => ({ ...c, won: false, ring: null })),
+    ring: null,        // flying ring
+    settled: [],       // rings on pegs (display only)
+    particles: [],
+    floaters: [],      // floating score texts
+    mouse: { x: W/2, y: H/2, held: false },
+    aimFrom: null,     // { x, y } when mouse held
+    msgText: '',
+    msgTimer: 0,
+    highScore: +localStorage.getItem('rtHS') || 0,
+    titlePulse: 0,
+    landDelay: 0,      // frames to wait after ring lands
+  };
+}
+G_STATE = mkState();
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+function star(ctx, cx, cy, ro, ri, n) {
+  ctx.beginPath();
+  for (let i = 0; i < n*2; i++) {
+    const r = i%2===0 ? ro : ri;
+    const a = i*Math.PI/n - Math.PI/2;
+    i===0 ? ctx.moveTo(cx+r*Math.cos(a), cy+r*Math.sin(a))
+           : ctx.lineTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+function lerp(a, b, t) { return a + (b-a)*t; }
+const MISS_MSGS = ['哎呀，差一点！','再来！','没套中~','加油！','继续试试！'];
+const HIT_MSGS  = ['太厉害了！','完美！','绝了！','漂亮！','一击必中！'];
+
+// ─── Particle ────────────────────────────────────────────────────────────────
+class Particle {
+  constructor(x, y, col) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random()-0.5)*10;
+    this.vy = Math.random()*-8 - 2;
+    this.life = 1;
+    this.decay = 0.018 + Math.random()*0.018;
+    this.sz = 3 + Math.random()*6;
+    this.col = col;
+    this.type = Math.random() < 0.4 ? 'star' : 'rect';
+    this.rot = Math.random()*Math.PI*2;
+    this.rotV = (Math.random()-0.5)*0.3;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vy += 0.25; this.vx *= 0.97;
+    this.rot += this.rotV;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  draw() {
+    ctx.save(); ctx.globalAlpha = this.life;
+    ctx.translate(this.x, this.y); ctx.rotate(this.rot);
+    ctx.fillStyle = this.col;
+    if (this.type === 'star') {
+      star(ctx, 0, 0, this.sz, this.sz*0.4, 5); ctx.fill();
+    } else {
+      ctx.fillRect(-this.sz/2, -this.sz/2, this.sz, this.sz);
+    }
+    ctx.restore();
+  }
+}
+
+// ─── Floating score text ──────────────────────────────────────────────────────
+class Floater {
+  constructor(x, y, text, col) {
+    this.x = x; this.y = y; this.text = text; this.col = col;
+    this.life = 1; this.vy = -1.5;
+  }
+  update() { this.y += this.vy; this.life -= 0.018; return this.life > 0; }
+  draw() {
+    ctx.save(); ctx.globalAlpha = this.life;
+    ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 4; ctx.strokeText(this.text, this.x, this.y);
+    ctx.fillStyle = this.col; ctx.fillText(this.text, this.x, this.y);
+    ctx.restore();
+  }
+}
+
+// ─── Ring object (flying or settled) ─────────────────────────────────────────
+class Ring {
+  constructor(x, y, vx, vy) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.angle = 0;
+    this.angV  = (Math.random()-0.5)*0.25;
+    this.color = `hsl(${Math.random()*50+10},90%,60%)`;
+    this.grounded = false;
+    this.bounces  = 0;
+    this.trail = [];
+    this.onPeg = null;  // prize object if caught
+    this.settleAnim = 0;
+  }
+  update() {
+    if (this.grounded) return;
+    this.trail.push({x:this.x, y:this.y});
+    if (this.trail.length > 10) this.trail.shift();
+    this.vy  += G;
+    this.x   += this.vx;
+    this.y   += this.vy;
+    this.angle += this.angV;
+    this.vx  *= 0.998;
+  }
+  draw(alpha) {
+    // trail
+    for (let i=0; i<this.trail.length; i++) {
+      const a = (i/this.trail.length)*0.35*(alpha||1);
+      ctx.beginPath();
+      ctx.arc(this.trail[i].x, this.trail[i].y, RING_R, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,220,80,${a})`;
+      ctx.lineWidth = 2; ctx.stroke();
+    }
+    // ring body
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ctx.globalAlpha = alpha || 1;
+    // glow
+    ctx.beginPath(); ctx.arc(0, 0, RING_R+2, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = RING_TH+5; ctx.stroke();
+    // main
+    ctx.beginPath(); ctx.arc(0, 0, RING_R, 0, Math.PI*2);
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = RING_TH; ctx.stroke();
+    // shine
+    ctx.beginPath();
+    ctx.arc(-6, -9, RING_R-3, -0.7, 0.4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Draw: Background ─────────────────────────────────────────────────────────
+function drawBG() {
+  const sg = ctx.createLinearGradient(0, 0, 0, TABLE_TOP);
+  sg.addColorStop(0, '#0d0122'); sg.addColorStop(1, '#3b0d6e');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, TABLE_TOP);
+
+  const gg = ctx.createLinearGradient(0, TABLE_TOP, 0, H);
+  gg.addColorStop(0, '#3b1a06'); gg.addColorStop(1, '#1a0a00');
+  ctx.fillStyle = gg; ctx.fillRect(0, TABLE_TOP, W, H-TABLE_TOP);
+
+  // stars
+  const t = Date.now()*0.001;
+  for (const s of STARS) {
+    const a = 0.4 + 0.3*Math.sin(t*0.8+s.twinkle);
+    ctx.fillStyle = `rgba(255,255,220,${a})`;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ─── Draw: Carnival lights ────────────────────────────────────────────────────
+const BULB_COLS = ['#ff5555','#ffdd00','#55cc55','#55aaff','#ff55ff'];
+function drawLights() {
+  const t = Date.now()*0.003;
+  const spacing = 70, topY = 48, botY = 58;
+  // string
+  ctx.beginPath(); ctx.moveTo(0, topY);
+  for (let x=0; x<W; x+=spacing) {
+    ctx.lineTo(x+spacing/2, botY); ctx.lineTo(x+spacing, topY);
+  }
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  for (let x=35; x<W; x+=spacing) {
+    const ci = Math.floor(x/spacing) % BULB_COLS.length;
+    const col = BULB_COLS[ci];
+    const fl = 0.6 + 0.4*Math.sin(t*1.2+x*0.07);
+    // halo
+    const g = ctx.createRadialGradient(x, topY, 0, x, topY, 22);
+    g.addColorStop(0, col+'66'); g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, topY, 22, 0, Math.PI*2); ctx.fill();
+    // bulb
+    ctx.globalAlpha = fl;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, topY, 8, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ─── Draw: Table & cloth ─────────────────────────────────────────────────────
+function drawTable() {
+  // cloth drape
+  ctx.fillStyle = '#9B2226';
+  ctx.beginPath();
+  ctx.moveTo(430, TABLE_TOP);
+  for (let x=430; x<=W; x+=30) {
+    ctx.lineTo(x, TABLE_TOP + 12*Math.sin((x-430)*Math.PI/30));
+  }
+  ctx.lineTo(W, TABLE_TOP+12); ctx.lineTo(W, TABLE_TOP+18); ctx.lineTo(430, TABLE_TOP+18);
+  ctx.closePath(); ctx.fill();
+
+  // table surface
+  const tg = ctx.createLinearGradient(0, TABLE_TOP, 0, TABLE_TOP+30);
+  tg.addColorStop(0, '#8B4513'); tg.addColorStop(1, '#5C2E00');
+  ctx.fillStyle = tg; ctx.fillRect(430, TABLE_TOP, W-430, H-TABLE_TOP);
+
+  // edge highlight
+  ctx.fillStyle = '#A0552D'; ctx.fillRect(430, TABLE_TOP, W-430, 10);
+
+  // legs
+  ctx.fillStyle = '#4a2000';
+  ctx.fillRect(440, TABLE_TOP+15, 18, H-TABLE_TOP-15);
+  ctx.fillRect(W-58, TABLE_TOP+15, 18, H-TABLE_TOP-15);
+
+  // grid lines on table
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+  for (let x=440; x<W; x+=28) {
+    ctx.beginPath(); ctx.moveTo(x, TABLE_TOP+10); ctx.lineTo(x, H); ctx.stroke();
+  }
+}
+
+// ─── Draw: Prizes & pegs ─────────────────────────────────────────────────────
+function drawPrizes() {
+  const t = Date.now()*0.002;
+  for (const p of G_STATE.prizes) {
+    const pegX = p.x;
+    const pegBotY = TABLE_TOP;
+    const pegTopY = PEG_TOP;
+
+    // peg shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(pegX-PEG_R-1, pegTopY+2, PEG_R*2+2, pegBotY-pegTopY);
+
+    // peg gradient
+    const pg = ctx.createLinearGradient(pegX-PEG_R, 0, pegX+PEG_R, 0);
+    pg.addColorStop(0,'#666'); pg.addColorStop(0.35,'#ddd'); pg.addColorStop(1,'#888');
+    ctx.fillStyle = pg;
+    ctx.fillRect(pegX-PEG_R, pegTopY, PEG_R*2, pegBotY-pegTopY);
+
+    // peg cap
+    ctx.fillStyle = '#ccc';
+    ctx.beginPath(); ctx.ellipse(pegX, pegTopY, PEG_R+1, 5, 0, 0, Math.PI*2); ctx.fill();
+
+    // prize emoji (bob animation if not won)
+    if (!p.won) {
+      const bobY = pegTopY - 55 + Math.sin(t + p.x*0.01)*4;
+      ctx.save(); ctx.translate(pegX, bobY);
+      ctx.font = '40px Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.emoji, 0, 0);
+
+      // pts label
+      ctx.font = 'bold 12px Arial';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+      ctx.strokeText(`+${p.pts}`, 0, 22);
+      ctx.fillStyle = '#FFD700'; ctx.fillText(`+${p.pts}`, 0, 22);
+      ctx.restore();
+
+      // name on table
+      ctx.save();
+      ctx.font = '11px Arial'; ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,220,160,0.75)';
+      ctx.fillText(p.name, pegX, TABLE_TOP+18);
+      ctx.restore();
+    }
+  }
+}
+
+// ─── Draw: Settled rings on pegs ─────────────────────────────────────────────
+function drawSettledRings() {
+  for (const r of G_STATE.settled) {
+    if (!r.onPeg) continue;
+    ctx.save();
+    ctx.translate(r.onPeg.x, PEG_TOP + 15);
+    ctx.rotate(r.settleAngle || 0.15);
+    ctx.beginPath(); ctx.arc(0, 0, RING_R, 0, Math.PI*2);
+    ctx.strokeStyle = r.color; ctx.lineWidth = RING_TH; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Draw: Player ────────────────────────────────────────────────────────────
+function drawPlayer() {
+  const px = 115, py = 370;
+  // body
+  ctx.fillStyle = '#2D3436';
+  rr(ctx, px-18, py-50, 36, 48, 6); ctx.fill();
+
+  // head
+  ctx.fillStyle = '#F4A261';
+  ctx.beginPath(); ctx.arc(px, py-68, 20, 0, Math.PI*2); ctx.fill();
+
+  // hat
+  ctx.fillStyle = '#E63946';
+  ctx.fillRect(px-22, py-90, 44, 8);
+  ctx.fillRect(px-13, py-115, 26, 28);
+
+  // hat band
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(px-13, py-91, 26, 5);
+
+  // eyes
+  ctx.fillStyle = '#2D3436';
+  ctx.beginPath(); ctx.arc(px-7, py-70, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px+7, py-70, 3, 0, Math.PI*2); ctx.fill();
+
+  // smile
+  ctx.strokeStyle = '#2D3436'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(px, py-62, 7, 0.2, Math.PI-0.2); ctx.stroke();
+
+  // arm angle toward mouse
+  const mx = G_STATE.mouse.x, my = G_STATE.mouse.y;
+  const aAngle = G_STATE.aimFrom
+    ? Math.atan2(my - (py-20), mx - (px+12)) * 0.6 - 0.3
+    : -0.8;
+
+  // arm
+  const ax1=px+12, ay1=py-22, ax2=ax1+Math.cos(aAngle)*38, ay2=ay1+Math.sin(aAngle)*38;
+  ctx.strokeStyle = '#F4A261'; ctx.lineWidth = 9; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(ax2, ay2); ctx.stroke();
+
+  // legs
+  ctx.strokeStyle = '#2D3436'; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(px-5, py-2); ctx.lineTo(px-12, py+38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px+5, py-2); ctx.lineTo(px+12, py+38); ctx.stroke();
+
+  // shoes
+  ctx.fillStyle = '#2D3436';
+  ctx.beginPath(); ctx.ellipse(px-14, py+38, 11, 6, 0.2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+14, py+38, 11, 6, -0.2, 0, Math.PI*2); ctx.fill();
+
+  // ring in hand (when aiming)
+  if (G_STATE.phase === 'play' && !G_STATE.ring && G_STATE.ringsLeft > 0) {
+    ctx.save(); ctx.translate(ax2, ay2); ctx.rotate(aAngle + 0.5);
+    ctx.beginPath(); ctx.arc(0, 0, RING_R*0.75, 0, Math.PI*2);
+    ctx.strokeStyle = '#FF6B6B'; ctx.lineWidth = RING_TH*0.8; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Draw: Trajectory preview ────────────────────────────────────────────────
+function drawAimPreview() {
+  if (G_STATE.phase !== 'play' || !G_STATE.aimFrom || G_STATE.ring) return;
+  const mx = G_STATE.mouse.x, my = G_STATE.mouse.y;
+  const dx = mx - G_STATE.aimFrom.x, dy = my - G_STATE.aimFrom.y;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if (dist < 8) return;
+
+  const pct   = Math.min(dist, 160) / 160;
+  const speed = pct * MAX_POWER;
+  const ang   = Math.atan2(dy, dx);
+  let vx = Math.cos(ang)*speed, vy = Math.sin(ang)*speed;
+  // only draw if going right
+  if (vx <= 0) return;
+
+  let px = THROW_X, py = THROW_Y;
+  ctx.setLineDash([5, 9]);
+  ctx.strokeStyle = 'rgba(255,255,180,0.55)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(px, py);
+  for (let i=0; i<90; i++) {
+    vy += G; px += vx; py += vy;
+    if (py > TABLE_TOP+10 || px > W+20) break;
+    ctx.lineTo(px, py);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // landing dot
+  ctx.fillStyle = 'rgba(255,255,100,0.7)';
+  ctx.beginPath(); ctx.arc(px, Math.min(py, TABLE_TOP), 5, 0, Math.PI*2); ctx.fill();
+
+  // power bar
+  const bx=10, by=H-52, bw=185, bh=18;
+  ctx.fillStyle='rgba(0,0,0,0.55)'; rr(ctx,bx,by,bw,bh,6); ctx.fill();
+  const barCol = pct<0.4 ? '#55cc55' : pct<0.7 ? '#ffdd00' : '#ff5555';
+  ctx.fillStyle=barCol; rr(ctx,bx,by,bw*pct,bh,6); ctx.fill();
+  ctx.strokeStyle='rgba(255,200,80,0.6)'; ctx.lineWidth=1.5; rr(ctx,bx,by,bw,bh,6); ctx.stroke();
+  ctx.fillStyle='white'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
+  ctx.fillText(`力度 ${Math.round(pct*100)}%`, bx+bw/2, by+13);
+}
+
+// ─── Draw: HUD ───────────────────────────────────────────────────────────────
+function drawHUD() {
+  // score panel
+  ctx.fillStyle='rgba(0,0,0,0.6)'; rr(ctx,10,10,190,85,10); ctx.fill();
+  ctx.strokeStyle='#FFD700'; ctx.lineWidth=2; rr(ctx,10,10,190,85,10); ctx.stroke();
+  ctx.fillStyle='#FFD700'; ctx.font='bold 13px Arial'; ctx.textAlign='left';
+  ctx.fillText('🏆 得分', 24, 32);
+  ctx.font='bold 34px Arial'; ctx.fillText(G_STATE.score, 24, 66);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='11px Arial';
+  ctx.fillText(`最高: ${G_STATE.highScore}`, 115, 66);
+
+  // rings panel
+  ctx.fillStyle='rgba(0,0,0,0.6)'; rr(ctx,10,105,190,56,10); ctx.fill();
+  ctx.strokeStyle='#4ECDC4'; ctx.lineWidth=2; rr(ctx,10,105,190,56,10); ctx.stroke();
+  ctx.fillStyle='#4ECDC4'; ctx.font='bold 13px Arial'; ctx.textAlign='left';
+  ctx.fillText('⭕ 剩余套圈', 24, 126);
+  for (let i=0; i<MAX_RINGS; i++) {
+    const rx=26+i*25, ry=148;
+    ctx.beginPath(); ctx.arc(rx, ry, 9, 0, Math.PI*2);
+    ctx.strokeStyle = i < G_STATE.ringsLeft ? '#FF6B6B' : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = i < G_STATE.ringsLeft ? 3 : 1.5; ctx.stroke();
+    if (i < G_STATE.ringsLeft) {
+      ctx.fillStyle='rgba(255,107,107,0.2)';
+      ctx.beginPath(); ctx.arc(rx, ry, 9, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // combo
+  if (G_STATE.combo >= 2) {
+    ctx.save();
+    ctx.font = 'bold 22px Arial'; ctx.textAlign = 'left';
+    ctx.strokeStyle='#000'; ctx.lineWidth=4;
+    ctx.strokeText(`🔥 连击 x${G_STATE.combo}`, 14, H-65);
+    ctx.fillStyle='#ff7700'; ctx.fillText(`🔥 连击 x${G_STATE.combo}`, 14, H-65);
+    ctx.restore();
+  }
+}
+
+// ─── Draw: Big message ───────────────────────────────────────────────────────
+function drawMsg() {
+  if (G_STATE.msgTimer <= 0) return;
+  const a = Math.min(1, G_STATE.msgTimer/25);
+  const sc = 1 + (1-G_STATE.msgTimer/70)*0.3;
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.translate(W/2, H/2-60); ctx.scale(sc, sc);
+  ctx.font='bold 44px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.strokeStyle='#000'; ctx.lineWidth=6; ctx.strokeText(G_STATE.msgText, 0, 0);
+  ctx.fillStyle='#FFD700'; ctx.fillText(G_STATE.msgText, 0, 0);
+  ctx.restore();
+  G_STATE.msgTimer--;
+}
+
+// ─── Draw: Title screen ──────────────────────────────────────────────────────
+function drawTitle() {
+  ctx.fillStyle='rgba(0,0,0,0.72)'; ctx.fillRect(0,0,W,H);
+  G_STATE.titlePulse = (G_STATE.titlePulse||0)+0.05;
+  const sc = 1+0.03*Math.sin(G_STATE.titlePulse);
+
+  ctx.save(); ctx.translate(W/2, 160); ctx.scale(sc,sc);
+  ctx.font='bold 70px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.strokeStyle='#FF6B00'; ctx.lineWidth=7; ctx.strokeText('🎯 套圈游戏', 0, 0);
+  ctx.fillStyle='#FFD700'; ctx.fillText('🎯 套圈游戏', 0, 0);
+  ctx.restore();
+
+  ctx.textAlign='center';
+  ctx.font='20px Arial'; ctx.fillStyle='rgba(255,255,255,0.88)';
+  ctx.fillText('按住鼠标拖拽瞄准，松开投出套圈！', W/2, 250);
+  ctx.fillText('把圈套中礼物的杆子即可得分~', W/2, 285);
+
+  ctx.font='16px Arial'; ctx.fillStyle='rgba(255,200,100,0.8)';
+  ctx.fillText('越远的礼物分数越高，考验你的准头！', W/2, 330);
+
+  if (G_STATE.highScore > 0) {
+    ctx.font='bold 18px Arial'; ctx.fillStyle='#FFD700';
+    ctx.fillText(`历史最高: ${G_STATE.highScore} 分`, W/2, 370);
+  }
+
+  // button
+  const bx=W/2-110, by=415, bw=220, bh=58;
+  const bg = ctx.createLinearGradient(bx, by, bx, by+bh);
+  bg.addColorStop(0,'#FF6B6B'); bg.addColorStop(1,'#CC1100');
+  ctx.fillStyle=bg; rr(ctx,bx,by,bw,bh,14); ctx.fill();
+  ctx.strokeStyle='#FFD700'; ctx.lineWidth=3; rr(ctx,bx,by,bw,bh,14); ctx.stroke();
+  ctx.fillStyle='white'; ctx.font='bold 28px Arial'; ctx.fillText('开始游戏', W/2, by+36);
+  G_STATE._startBtn = {x:bx, y:by, w:bw, h:bh};
+}
+
+// ─── Draw: Game over screen ───────────────────────────────────────────────────
+function drawOver() {
+  ctx.fillStyle='rgba(0,0,0,0.78)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+
+  // title
+  ctx.font='bold 54px Arial'; ctx.strokeStyle='#000'; ctx.lineWidth=6;
+  const isNew = G_STATE.score > G_STATE.highScore;
+  ctx.strokeText('游戏结束！', W/2, 120); ctx.fillStyle='#FF6B6B'; ctx.fillText('游戏结束！', W/2, 120);
+
+  if (isNew) {
+    G_STATE.highScore = G_STATE.score;
+    localStorage.setItem('rtHS', G_STATE.highScore);
+    ctx.font='bold 28px Arial'; ctx.fillStyle='#FFD700';
+    ctx.strokeText('🎉 新纪录！', W/2, 175); ctx.fillText('🎉 新纪录！', W/2, 175);
+  }
+
+  ctx.font='24px Arial'; ctx.fillStyle='white';
+  ctx.fillText(`本轮得分：${G_STATE.score} 分`, W/2, isNew ? 225 : 185);
+  const won = G_STATE.settled.length;
+  ctx.font='18px Arial'; ctx.fillStyle='rgba(255,255,255,0.75)';
+  ctx.fillText(`套中礼物：${won} 件`, W/2, isNew ? 265 : 225);
+
+  // show won prizes
+  if (won > 0) {
+    const emojis = G_STATE.prizes.filter(p=>p.won).map(p=>p.emoji).join('  ');
+    ctx.font='36px Arial'; ctx.fillStyle='white';
+    ctx.fillText(emojis, W/2, isNew ? 320 : 280);
+  }
+
+  // hint
+  ctx.font='15px Arial'; ctx.fillStyle='rgba(255,200,100,0.7)';
+  const hints = ['靠近的礼物更容易套中', '力度要控制好！', '多试几次就能找到感觉'];
+  ctx.fillText(hints[Math.floor(Date.now()/3000)%hints.length], W/2, isNew ? 360 : 320);
+
+  // button
+  const by2 = isNew ? 400 : 360;
+  const bx2=W/2-110, bw2=220, bh2=55;
+  const bg2 = ctx.createLinearGradient(bx2, by2, bx2, by2+bh2);
+  bg2.addColorStop(0,'#55cc55'); bg2.addColorStop(1,'#3a8a3a');
+  ctx.fillStyle=bg2; rr(ctx,bx2,by2,bw2,bh2,14); ctx.fill();
+  ctx.strokeStyle='#FFD700'; ctx.lineWidth=3; rr(ctx,bx2,by2,bw2,bh2,14); ctx.stroke();
+  ctx.fillStyle='white'; ctx.font='bold 26px Arial'; ctx.fillText('再来一局', W/2, by2+35);
+  G_STATE._retryBtn = {x:bx2, y:by2, w:bw2, h:bh2};
+}
+
+// ─── Physics & collision ─────────────────────────────────────────────────────
+function spawnParticles(x, y, count, cols) {
+  for (let i=0; i<count; i++) {
+    G_STATE.particles.push(new Particle(x, y, cols[Math.floor(Math.random()*cols.length)]));
+  }
+}
+
+function doCollision() {
+  const r = G_STATE.ring;
+  if (!r || r.grounded) return;
+
+  // Check peg catches — when ring descends and is at peg height zone
+  if (r.vy > 0 && r.y > PEG_TOP - RING_R && r.y < TABLE_TOP) {
+    for (const p of G_STATE.prizes) {
+      if (p.won) continue;
+      const dist = Math.abs(r.x - p.x);
+      // ring center must be close to peg (peg inside ring hole)
+      // inner radius of ring hole = RING_R - RING_TH/2
+      if (dist < RING_R - PEG_R - 2) {
+        // CAUGHT!
+        r.grounded = true;
+        r.onPeg = p;
+        r.x = p.x;
+        r.y = PEG_TOP + 12;
+        r.angle = (Math.random()-0.5)*0.3;
+        r.settleAngle = r.angle;
+        p.won = true;
+
+        G_STATE.combo++;
+        const pts = p.pts * (G_STATE.combo >= 3 ? 2 : 1);
+        G_STATE.score += pts;
+        G_STATE.settled.push(r);
+
+        const comboBonus = G_STATE.combo >= 3 ? ' (双倍！)' : '';
+        const hitMsg = HIT_MSGS[Math.floor(Math.random()*HIT_MSGS.length)];
+        G_STATE.msgText = G_STATE.combo>=2
+          ? `连击 x${G_STATE.combo}! +${pts}${comboBonus}`
+          : `${hitMsg} +${pts}`;
+        G_STATE.msgTimer = 85;
+
+        const partCols = ['#FFD700','#FF6B6B','#6BCB77','#4D96FF','#FF6BFF','#fff'];
+        spawnParticles(p.x, PEG_TOP-40, 35, partCols);
+        G_STATE.floaters.push(new Floater(p.x, PEG_TOP-80, `+${pts}`, '#FFD700'));
+
+        return;
+      }
+    }
+  }
+
+  // Hit table (missed all pegs)
+  if (r.y + RING_R >= TABLE_TOP && r.vy > 0) {
+    if (r.bounces === 0) {
+      r.vy = -r.vy * BOUNCE_DMP;
+      r.vx *= 0.7;
+      r.y = TABLE_TOP - RING_R;
+      r.bounces++;
+    } else {
+      r.grounded = true;
+      r.y = TABLE_TOP - RING_R;
+      G_STATE.combo = 0;
+      G_STATE.msgText = MISS_MSGS[Math.floor(Math.random()*MISS_MSGS.length)];
+      G_STATE.msgTimer = 60;
+    }
+    return;
+  }
+
+  // Off screen
+  if (r.x > W+60 || r.x < -60 || r.y > H+60) {
+    r.grounded = true;
+    G_STATE.combo = 0;
+    G_STATE.msgText = '飞出去了！';
+    G_STATE.msgTimer = 55;
+  }
+}
+
+// ─── Update ──────────────────────────────────────────────────────────────────
+function update() {
+  if (G_STATE.phase !== 'play') return;
+
+  if (G_STATE.ring) {
+    G_STATE.ring.update();
+    doCollision();
+
+    if (G_STATE.ring.grounded) {
+      G_STATE.landDelay++;
+      if (G_STATE.landDelay > 55) {
+        if (!G_STATE.ring.onPeg) G_STATE.ring = null;
+        else G_STATE.ring = null;
+        G_STATE.landDelay = 0;
+        if (G_STATE.ringsLeft <= 0) G_STATE.phase = 'over';
+      }
+    }
+  }
+
+  G_STATE.particles = G_STATE.particles.filter(p=>p.update());
+  G_STATE.floaters  = G_STATE.floaters.filter(f=>f.update());
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  drawBG();
+  drawLights();
+  drawTable();
+  drawPrizes();
+  drawSettledRings();
+
+  // flying ring (behind player, drawn before player if behind x=THROW_X)
+  if (G_STATE.ring && !G_STATE.ring.onPeg) {
+    G_STATE.ring.draw();
+  }
+
+  drawPlayer();
+  drawAimPreview();
+
+  for (const p of G_STATE.particles) p.draw();
+  for (const f of G_STATE.floaters)  f.draw();
+
+  if (G_STATE.phase === 'play') {
+    drawHUD();
+    drawMsg();
+  } else if (G_STATE.phase === 'title') {
+    drawTitle();
+  } else if (G_STATE.phase === 'over') {
+    drawOver();
+  }
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = W / r.width, scaleY = H / r.height;
+  return {
+    x: (e.clientX - r.left) * scaleX,
+    y: (e.clientY - r.top)  * scaleY,
+  };
+}
+
+canvas.addEventListener('mousedown', e => {
+  const {x, y} = getPos(e);
+  G_STATE.mouse = {x, y, held: true};
+
+  if (G_STATE.phase === 'title') {
+    const b = G_STATE._startBtn;
+    if (b && x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h) {
+      G_STATE = mkState(); G_STATE.phase = 'play';
+    }
+    return;
+  }
+  if (G_STATE.phase === 'over') {
+    const b = G_STATE._retryBtn;
+    if (b && x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h) {
+      G_STATE = mkState(); G_STATE.phase = 'play';
+    }
+    return;
+  }
+  if (G_STATE.phase === 'play' && !G_STATE.ring && G_STATE.ringsLeft > 0) {
+    G_STATE.aimFrom = {x: THROW_X, y: THROW_Y};
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  const {x, y} = getPos(e);
+  G_STATE.mouse = {x, y, held: G_STATE.mouse.held};
+});
+
+canvas.addEventListener('mouseup', e => {
+  const {x, y} = getPos(e);
+  G_STATE.mouse = {x, y, held: false};
+
+  if (G_STATE.phase !== 'play' || !G_STATE.aimFrom || G_STATE.ring) {
+    G_STATE.aimFrom = null; return;
+  }
+  const af = G_STATE.aimFrom;
+  G_STATE.aimFrom = null;
+
+  const dx = x - af.x, dy = y - af.y;
+  const dist = Math.sqrt(dx*dx+dy*dy);
+  if (dist < 8) return;
+
+  const pct   = Math.min(dist, 160) / 160;
+  const speed = pct * MAX_POWER;
+  const ang   = Math.atan2(dy, dx);
+  const vx    = Math.cos(ang)*speed;
+  const vy    = Math.sin(ang)*speed;
+
+  if (vx <= 1) return; // must throw rightward
+
+  G_STATE.ring = new Ring(THROW_X, THROW_Y, vx, vy);
+  G_STATE.ringsLeft--;
+});
+
+// Touch support
+function toMouse(type, e) {
+  e.preventDefault();
+  const t = type === 'end' ? e.changedTouches[0] : e.touches[0];
+  canvas.dispatchEvent(new MouseEvent('mouse'+type, {clientX:t.clientX, clientY:t.clientY, bubbles:true}));
+}
+canvas.addEventListener('touchstart',  e => toMouse('down', e), {passive:false});
+canvas.addEventListener('touchmove',   e => toMouse('move', e), {passive:false});
+canvas.addEventListener('touchend',    e => toMouse('up',   e), {passive:false});
+
+// ─── Game loop ────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>套圈游戏</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- HUD -->
+  <div id="ui" class="hidden">
+    <div id="hud">
+      <div id="ring-counter">🎯 剩余: <span id="rings-left">10</span></div>
+      <div id="score-display">得分: <span id="score">0</span></div>
+    </div>
+    <div id="power-container">
+      <div id="power-label">蓄力</div>
+      <div id="power-bar-bg">
+        <div id="power-bar"></div>
+      </div>
+    </div>
+    <div id="hint-text">移动鼠标瞄准 · 按住左键蓄力 · 松开投掷</div>
+    <div id="aim-label"></div>
+  </div>
+
+  <!-- Start Screen -->
+  <div id="start-screen" class="overlay">
+    <div class="overlay-box">
+      <h1>🎯 套圈游戏</h1>
+      <div class="rules">
+        <p>🖱️ 移动鼠标选择目标</p>
+        <p>🖱️ 按住左键蓄力，松开投掷</p>
+        <p>📈 蓄力越多，弧线越平直</p>
+        <p>🎁 共 10 个圈，多多套中！</p>
+      </div>
+      <div class="prize-info">
+        <span class="prize front">近排 10分</span>
+        <span class="prize mid">中排 25分</span>
+        <span class="prize back">远排 50分</span>
+        <span class="prize special">⭐ 特别 100分</span>
+      </div>
+      <button id="start-btn">开始游戏</button>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameover-screen" class="overlay hidden">
+    <div class="overlay-box">
+      <h1>游戏结束！</h1>
+      <div id="result-score">0 分</div>
+      <div id="result-rank"></div>
+      <button id="replay-btn">再玩一次</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

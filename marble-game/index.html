@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>弹珠台</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      user-select: none;
+    }
+    #game-container {
+      position: relative;
+    }
+    canvas {
+      display: block;
+      border: 2px solid #e94560;
+      border-radius: 8px;
+      box-shadow: 0 0 30px rgba(233, 69, 96, 0.4);
+      cursor: pointer;
+    }
+    #ui {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 8px 4px;
+      color: #eee;
+      font-size: 14px;
+    }
+    #ui span { font-weight: bold; color: #e94560; font-size: 18px; }
+    #msg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 24px 36px;
+      border-radius: 12px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+      border: 2px solid #e94560;
+      display: none;
+      z-index: 10;
+      white-space: nowrap;
+    }
+    #msg button {
+      display: block;
+      margin: 16px auto 0;
+      padding: 10px 28px;
+      background: #e94560;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #msg button:hover { background: #c73652; }
+  </style>
+</head>
+<body>
+<div id="game-container">
+  <div id="ui">
+    <div>得分：<span id="score-display">0</span></div>
+    <div>剩余球：<span id="balls-display">5</span></div>
+    <div>最高分：<span id="best-display">0</span></div>
+  </div>
+  <canvas id="canvas" width="480" height="780"></canvas>
+  <div id="msg">
+    <div id="msg-text"></div>
+    <button id="msg-btn">再来一局</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+const { Engine, Render, Runner, Bodies, Body, World, Events, Vector } = Matter;
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+const TOTAL_BALLS = 5;
+const SLOT_COUNT = 9;
+const SLOT_LIT = 3; // how many slots light up each turn
+
+let score = 0;
+let ballsLeft = TOTAL_BALLS;
+let bestScore = 0;
+let litSlots = new Set();
+let gameOver = false;
+let activeBall = null;
+let ballLanded = false;
+let launching = false;
+let pullPower = 0; // 0..1
+let mouseDown = false;
+let mouseDownTime = 0;
+
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const WALL_T = 20;
+const SLOT_H = 72;
+const SLOT_Y = H - SLOT_H;
+const SLOT_W = W / SLOT_COUNT;
+const PEG_R = 7;
+const BALL_R = 10;
+
+// Launcher position (bottom right)
+const LAUNCHER_X = W - 40;
+const LAUNCHER_BASE_Y = H - SLOT_H - 20;
+const LAUNCHER_LEN = 80;
+
+// ─── Matter.js engine ─────────────────────────────────────────────────────────
+const engine = Engine.create({ gravity: { x: 0, y: 1.2 } });
+const world = engine.world;
+
+// ─── Walls ────────────────────────────────────────────────────────────────────
+const walls = [
+  Bodies.rectangle(W / 2, -10, W, 20, { isStatic: true, label: 'wall' }),      // top
+  Bodies.rectangle(-10, H / 2, 20, H, { isStatic: true, label: 'wall' }),       // left
+  Bodies.rectangle(W + 10, H / 2, 20, H, { isStatic: true, label: 'wall' }),    // right
+  Bodies.rectangle(W / 2, H + 10, W, 20, { isStatic: true, label: 'wall' }),    // bottom
+];
+World.add(world, walls);
+
+// ─── Slot dividers ────────────────────────────────────────────────────────────
+const dividers = [];
+for (let i = 0; i <= SLOT_COUNT; i++) {
+  const x = i * SLOT_W;
+  const div = Bodies.rectangle(x, H - SLOT_H / 2, 4, SLOT_H, { isStatic: true, label: 'divider', friction: 0 });
+  dividers.push(div);
+}
+World.add(world, dividers);
+
+// ─── Pegs ─────────────────────────────────────────────────────────────────────
+const pegs = [];
+function addPeg(x, y) {
+  const p = Bodies.circle(x, y, PEG_R, {
+    isStatic: true,
+    label: 'peg',
+    restitution: 0.6,
+    friction: 0.05,
+    render: { fillStyle: '#4ecdc4' }
+  });
+  pegs.push(p);
+  World.add(world, p);
+}
+
+// Staggered triangular grid
+const pegRows = 9;
+const pegCols = 8;
+const pegStartY = 130;
+const pegSpacingY = (SLOT_Y - pegStartY - 30) / pegRows;
+const pegSpacingX = (W - 60) / (pegCols - 1);
+
+for (let row = 0; row < pegRows; row++) {
+  const offset = (row % 2 === 0) ? 0 : pegSpacingX / 2;
+  const cols = (row % 2 === 0) ? pegCols : pegCols - 1;
+  for (let col = 0; col < cols; col++) {
+    const x = 30 + offset + col * pegSpacingX;
+    const y = pegStartY + row * pegSpacingY;
+    addPeg(x, y);
+  }
+}
+
+// ─── Triangle deflectors ──────────────────────────────────────────────────────
+const deflectors = [];
+function addDeflector(x, y, angle) {
+  const size = 22;
+  const verts = [
+    { x: 0, y: -size },
+    { x: size * 0.866, y: size * 0.5 },
+    { x: -size * 0.866, y: size * 0.5 }
+  ];
+  const d = Bodies.fromVertices(x, y, verts, {
+    isStatic: true,
+    label: 'deflector',
+    restitution: 0.7,
+    friction: 0.02,
+    angle: angle
+  });
+  deflectors.push(d);
+  World.add(world, d);
+}
+
+// Place a few deflectors for variety
+addDeflector(100, 240, 0.3);
+addDeflector(350, 280, -0.5);
+addDeflector(180, 380, 0.1);
+addDeflector(310, 420, -0.2);
+addDeflector(80,  450, 0.4);
+addDeflector(400, 360, 0.6);
+
+// ─── Lit slots logic ──────────────────────────────────────────────────────────
+function randomizeLitSlots() {
+  litSlots.clear();
+  const indices = Array.from({ length: SLOT_COUNT }, (_, i) => i);
+  // Shuffle and take first SLOT_LIT
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  for (let i = 0; i < SLOT_LIT; i++) litSlots.add(indices[i]);
+}
+
+randomizeLitSlots();
+
+// ─── Ball launch ──────────────────────────────────────────────────────────────
+function launchBall(power) {
+  if (activeBall || gameOver || ballsLeft <= 0) return;
+  ballLanded = false;
+
+  const ball = Bodies.circle(LAUNCHER_X, LAUNCHER_BASE_Y - 10, BALL_R, {
+    restitution: 0.5,
+    friction: 0.02,
+    frictionAir: 0.008,
+    label: 'ball',
+    density: 0.004,
+  });
+
+  const speed = 14 + power * 10; // min 14, max 24
+  // Launch upward-left toward center
+  const angle = -Math.PI * 0.72 - power * 0.15;
+  Body.setVelocity(ball, {
+    x: Math.cos(angle) * speed,
+    y: Math.sin(angle) * speed
+  });
+
+  activeBall = ball;
+  World.add(world, ball);
+  ballsLeft--;
+  updateUI();
+}
+
+// ─── Detect landing ───────────────────────────────────────────────────────────
+let hitFlash = null; // { slot, timer }
+let particles = [];
+
+Events.on(engine, 'afterUpdate', () => {
+  if (!activeBall || ballLanded) return;
+  const { x, y } = activeBall.position;
+
+  // Ball has settled near the bottom
+  if (y > SLOT_Y + BALL_R + 2) {
+    ballLanded = true;
+    const slot = Math.floor(x / SLOT_W);
+    const clamped = Math.max(0, Math.min(SLOT_COUNT - 1, slot));
+
+    let gained = 0;
+    if (litSlots.has(clamped)) {
+      // Score: center slots worth more
+      const centerDist = Math.abs(clamped - (SLOT_COUNT - 1) / 2);
+      gained = centerDist <= 1 ? 300 : 150;
+      score += gained;
+      spawnParticles(x, SLOT_Y + SLOT_H / 2, '#ffe066');
+    } else {
+      gained = 0;
+    }
+
+    hitFlash = { slot: clamped, timer: 60, hit: litSlots.has(clamped), gained };
+    updateUI();
+
+    setTimeout(() => {
+      if (activeBall) {
+        World.remove(world, activeBall);
+        activeBall = null;
+      }
+
+      if (ballsLeft <= 0) {
+        setTimeout(endGame, 800);
+      } else {
+        randomizeLitSlots();
+      }
+    }, 1200);
+  }
+});
+
+// ─── Particles ────────────────────────────────────────────────────────────────
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color,
+      r: 3 + Math.random() * 4
+    });
+  }
+}
+
+// ─── UI updates ───────────────────────────────────────────────────────────────
+function updateUI() {
+  document.getElementById('score-display').textContent = score;
+  document.getElementById('balls-display').textContent = ballsLeft;
+  document.getElementById('best-display').textContent = bestScore;
+}
+
+function endGame() {
+  gameOver = true;
+  if (score > bestScore) bestScore = score;
+  updateUI();
+  const msgEl = document.getElementById('msg');
+  document.getElementById('msg-text').textContent =
+    score > 0 ? `游戏结束！得分 ${score} 分` : '游戏结束！一分未得……';
+  msgEl.style.display = 'block';
+}
+
+document.getElementById('msg-btn').addEventListener('click', () => {
+  document.getElementById('msg').style.display = 'none';
+  resetGame();
+});
+
+function resetGame() {
+  if (activeBall) { World.remove(world, activeBall); activeBall = null; }
+  score = 0;
+  ballsLeft = TOTAL_BALLS;
+  gameOver = false;
+  ballLanded = false;
+  launching = false;
+  pullPower = 0;
+  mouseDown = false;
+  hitFlash = null;
+  particles = [];
+  randomizeLitSlots();
+  updateUI();
+}
+
+// ─── Input: hold launcher to charge, release to fire ──────────────────────────
+const launcherZone = { x: W - 80, y: H - SLOT_H - 80, w: 80, h: 80 };
+
+function inLauncherZone(cx, cy) {
+  return cx >= launcherZone.x && cy >= launcherZone.y;
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (gameOver || activeBall) return;
+  const r = canvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  if (inLauncherZone(cx, cy)) {
+    mouseDown = true;
+    mouseDownTime = performance.now();
+    launching = true;
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (!mouseDown || !launching) return;
+  mouseDown = false;
+  launching = false;
+  const held = (performance.now() - mouseDownTime) / 1000; // seconds
+  const power = Math.min(held / 1.5, 1); // max at 1.5s hold
+  pullPower = 0;
+  launchBall(power);
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (gameOver || activeBall) return;
+  mouseDown = true;
+  mouseDownTime = performance.now();
+  launching = true;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!mouseDown || !launching) return;
+  mouseDown = false;
+  launching = false;
+  const held = (performance.now() - mouseDownTime) / 1000;
+  const power = Math.min(held / 1.5, 1);
+  pullPower = 0;
+  launchBall(power);
+}, { passive: false });
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+let lastTime = 0;
+const STEP = 1000 / 60;
+let accum = 0;
+
+// Peg flash state
+const pegFlashMap = new Map(); // peg id -> flash timer
+
+Events.on(engine, 'collisionStart', evt => {
+  evt.pairs.forEach(pair => {
+    const { bodyA, bodyB } = pair;
+    if (bodyA.label === 'peg') pegFlashMap.set(bodyA.id, 8);
+    if (bodyB.label === 'peg') pegFlashMap.set(bodyB.id, 8);
+  });
+});
+
+function draw(ts) {
+  requestAnimationFrame(draw);
+
+  // Physics step
+  const dt = ts - lastTime;
+  lastTime = ts;
+  accum += dt;
+  while (accum >= STEP) {
+    Engine.update(engine, STEP);
+    accum -= STEP;
+  }
+
+  // Update power meter while holding
+  if (mouseDown && launching) {
+    const held = (performance.now() - mouseDownTime) / 1000;
+    pullPower = Math.min(held / 1.5, 1);
+  }
+
+  // Update particles
+  particles = particles.filter(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.15;
+    p.life -= 0.025;
+    return p.life > 0;
+  });
+
+  // ── Draw background
+  ctx.fillStyle = '#0f0f23';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Draw slots
+  for (let i = 0; i < SLOT_COUNT; i++) {
+    const sx = i * SLOT_W;
+    const isLit = litSlots.has(i);
+    const isFlash = hitFlash && hitFlash.slot === i;
+    const flashHit = isFlash && hitFlash.hit;
+
+    // Slot background
+    ctx.fillStyle = isLit
+      ? (isFlash && flashHit ? '#fff8c5' : '#2a2a0a')
+      : '#141414';
+    ctx.fillRect(sx + 2, SLOT_Y + 2, SLOT_W - 4, SLOT_H - 4);
+
+    // Slot border
+    ctx.strokeStyle = isLit ? '#ffe066' : '#333';
+    ctx.lineWidth = isLit ? 2 : 1;
+    ctx.strokeRect(sx + 2, SLOT_Y + 2, SLOT_W - 4, SLOT_H - 4);
+
+    // Light orb
+    if (isLit) {
+      const cx = sx + SLOT_W / 2;
+      const cy = SLOT_Y + 22;
+      const pulse = 0.6 + 0.4 * Math.sin(ts / 300 + i);
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14 * pulse);
+      grad.addColorStop(0, 'rgba(255,230,80,1)');
+      grad.addColorStop(1, 'rgba(255,180,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 14 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Score label
+    const pts = litSlots.has(i)
+      ? (Math.abs(i - (SLOT_COUNT - 1) / 2) <= 1 ? '300' : '150')
+      : '0';
+    ctx.fillStyle = isLit ? '#ffe066' : '#444';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(pts, sx + SLOT_W / 2, SLOT_Y + SLOT_H - 10);
+  }
+
+  // Flash overlay for hit
+  if (hitFlash) {
+    hitFlash.timer--;
+    if (hitFlash.timer <= 0) hitFlash = null;
+    else if (hitFlash.hit && hitFlash.timer % 8 < 4) {
+      const sx = hitFlash.slot * SLOT_W;
+      ctx.fillStyle = 'rgba(255,240,100,0.3)';
+      ctx.fillRect(sx + 2, SLOT_Y + 2, SLOT_W - 4, SLOT_H - 4);
+      // Score popup
+      if (hitFlash.gained) {
+        ctx.fillStyle = '#ffe066';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'center';
+        const alpha = hitFlash.timer / 60;
+        ctx.globalAlpha = alpha;
+        ctx.fillText(`+${hitFlash.gained}`, sx + SLOT_W / 2, SLOT_Y - 10 + (1 - alpha) * -20);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // ── Draw pegs
+  pegs.forEach(peg => {
+    const { x, y } = peg.position;
+    const flash = pegFlashMap.get(peg.id);
+    if (flash > 0) {
+      pegFlashMap.set(peg.id, flash - 1);
+    }
+    const col = flash > 0 ? '#ffffff' : '#4ecdc4';
+    ctx.beginPath();
+    ctx.arc(x, y, PEG_R, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    if (flash <= 0) {
+      ctx.strokeStyle = '#2a9d8f';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  });
+
+  // ── Draw deflectors
+  deflectors.forEach(d => {
+    const verts = d.vertices;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = '#e76f51';
+    ctx.fill();
+    ctx.strokeStyle = '#c1440e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // ── Draw ball
+  if (activeBall) {
+    const { x, y } = activeBall.position;
+    const grad = ctx.createRadialGradient(x - 3, y - 3, 1, x, y, BALL_R);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(0.4, '#e94560');
+    grad.addColorStop(1, '#8b0000');
+    ctx.beginPath();
+    ctx.arc(x, y, BALL_R, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // ── Draw particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // ── Draw launcher area
+  drawLauncher();
+
+  // ── Hint text
+  if (!activeBall && ballsLeft > 0 && !gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('按住右下角蓄力，松手发射', W / 2, H - SLOT_H - 38);
+  }
+}
+
+function drawLauncher() {
+  const bx = LAUNCHER_X;
+  const by = LAUNCHER_BASE_Y;
+  const canLaunch = !activeBall && ballsLeft > 0 && !gameOver;
+
+  // Base platform
+  ctx.fillStyle = '#2c2c54';
+  ctx.beginPath();
+  ctx.roundRect(bx - 30, by, 60, 50, 8);
+  ctx.fill();
+  ctx.strokeStyle = canLaunch ? '#e94560' : '#555';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Plunger rod
+  const compress = launching ? pullPower * 30 : 0;
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(bx, by + 10);
+  ctx.lineTo(bx, by + 40 + compress);
+  ctx.stroke();
+
+  // Plunger handle
+  ctx.fillStyle = launching ? '#ffe066' : '#e94560';
+  ctx.beginPath();
+  ctx.roundRect(bx - 14, by + 32 + compress, 28, 16, 4);
+  ctx.fill();
+
+  // Power meter
+  if (launching || pullPower > 0) {
+    const meterH = 70;
+    const meterX = bx + 20;
+    const meterY = by - meterH;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(meterX, meterY, 12, meterH);
+    const fill = pullPower * meterH;
+    const meterColor = pullPower < 0.5 ? '#4ecdc4' : pullPower < 0.85 ? '#ffe066' : '#e94560';
+    ctx.fillStyle = meterColor;
+    ctx.fillRect(meterX, meterY + meterH - fill, 12, fill);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(meterX, meterY, 12, meterH);
+  }
+
+  // Ball preview on launcher
+  if (canLaunch && !launching) {
+    ctx.beginPath();
+    ctx.arc(bx, by - 14, BALL_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#e94560';
+    ctx.fill();
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+updateUI();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

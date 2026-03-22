@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>抓娃娃机</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #07070f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      user-select: none;
+    }
+    #game-container canvas { display: block; }
+  </style>
+</head>
+<body>
+<div id="game-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script>
+'use strict';
+
+/* =========================================================
+   LAYOUT CONSTANTS
+   ========================================================= */
+const GW = 600, GH = 760;          // canvas size
+
+const ML = 90,  MR = 510;          // machine left / right inner edge
+const MT = 100, MB = 660;          // machine top  / bottom inner edge
+
+const RAIL_Y      = 152;           // y of the sliding rail
+const CHUTE_X     = 420;           // left edge of prize chute
+const CHUTE_W     = MR - CHUTE_X;  // chute width  ≈ 90 px
+const CHUTE_DROP_X = CHUTE_X + CHUTE_W / 2;  // claw drops here
+
+/* =========================================================
+   CLAW CONSTANTS
+   ========================================================= */
+const CLAW_MIN_X = ML + 28;
+const CLAW_MAX_X = CHUTE_X - 28;   // can't slide into chute area
+
+const ARM_LEN         = 52;
+const ARM_OPEN_ANGLE  = 0.70;      // radians
+const ARM_CLOSED_ANGLE = 0.07;
+
+/* =========================================================
+   SPEED / TIMING
+   ========================================================= */
+const SPEED_SLIDE    = 185;
+const SPEED_DESCEND  = 235;
+const SPEED_ASCEND   = 190;
+const SPEED_TRAVEL   = 205;
+
+const GRAB_ANIM_DUR  = 0.42;       // seconds to close/open arms
+const GRAB_CHANCE    = 0.58;       // probability of successful grab
+const MAX_DESCENT_Y  = MB - 62;
+
+/* =========================================================
+   GAME CONFIG
+   ========================================================= */
+const GAME_TIME  = 90;
+const GAME_LIVES = 6;
+const TOY_COUNT  = 18;
+
+/* =========================================================
+   TOY TYPES  (color = body, ear = inner-ear, hi = shine)
+   ========================================================= */
+const TOY_DEFS = [
+  { name:'bear',   c:0xd4895a, ear:0xb05a30, hi:0xf0b080 },
+  { name:'bunny',  c:0xffb8cc, ear:0xff88aa, hi:0xffe0ec },
+  { name:'duck',   c:0xffe05a, ear:0xffbb00, hi:0xfff8a0 },
+  { name:'frog',   c:0x55cc66, ear:0x338844, hi:0x99ee99 },
+  { name:'penguin',c:0x2a3a55, ear:0x445580, hi:0x8899cc },
+  { name:'cat',    c:0xaa88dd, ear:0x886699, hi:0xddccff },
+  { name:'dog',    c:0xd4a870, ear:0xaa7840, hi:0xeeccaa },
+  { name:'star',   c:0xffe040, ear:0xffaa00, hi:0xffffff },
+];
+
+/* =========================================================
+   STATES
+   ========================================================= */
+const S = {
+  SETTLING:  'SETTLING',   // let physics settle at game start
+  IDLE:      'IDLE',
+  DESCENDING:'DESCENDING',
+  GRABBING:  'GRABBING',
+  ASCENDING: 'ASCENDING',
+  TRAVELING: 'TRAVELING',  // moving toward drop zone
+  DROPPING:  'DROPPING',
+  RESETTING: 'RESETTING',
+  GAMEOVER:  'GAMEOVER',
+};
+
+/* =========================================================
+   GAME SCENE
+   ========================================================= */
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  /* ── create ─────────────────────────────────────────── */
+  create() {
+    this.MJS = Phaser.Physics.Matter.Matter;   // raw Matter.js namespace
+
+    // game state
+    this.state    = S.SETTLING;
+    this.score    = 0;
+    this.timeLeft = GAME_TIME;
+    this.lives    = GAME_LIVES;
+    this.settleT  = 0;
+
+    // claw state
+    this.clawX    = (CLAW_MIN_X + CLAW_MAX_X) / 2;
+    this.clawY    = RAIL_Y;
+    this.armAngle = ARM_OPEN_ANGLE;
+
+    // grab state
+    this.grabAnimT   = 0;
+    this.grabbedToy  = null;
+
+    // physics
+    this.matter.world.setGravity(0, 3.0);
+
+    // graphics layers
+    this.gBg   = this.add.graphics().setDepth(0);
+    this.gToys = this.add.graphics().setDepth(1);
+    this.gClaw = this.add.graphics().setDepth(2);
+    this.gFg   = this.add.graphics().setDepth(3);
+
+    this.buildWalls();
+    this.spawnToys();
+    this.buildUI();
+    this.buildInput();
+
+    // 1-second countdown
+    this.time.addEvent({
+      delay: 1000, loop: true,
+      callback: () => {
+        if (this.state === S.GAMEOVER || this.state === S.SETTLING) return;
+        this.timeLeft = Math.max(0, this.timeLeft - 1);
+        this.txtTimer.setText(this.fmtTime(this.timeLeft));
+        if (this.timeLeft <= 0) this.doGameOver();
+      }
+    });
+  }
+
+  /* ── buildWalls ─────────────────────────────────────── */
+  buildWalls() {
+    const S = { isStatic: true, friction: 0.85, restitution: 0.2, label: 'wall' };
+
+    // outer left/right walls (tall, catch strays)
+    this.matter.add.rectangle(ML - 16, GH / 2, 32, GH * 2, S);
+    this.matter.add.rectangle(MR + 16, GH / 2, 32, GH * 2, S);
+
+    // ceiling inside machine
+    this.matter.add.rectangle(GW / 2, MT - 16, GW, 32, S);
+
+    // floor — left portion only (ML → CHUTE_X), gap = chute opening
+    const floorW = CHUTE_X - ML;
+    this.matter.add.rectangle(ML + floorW / 2, MB + 16, floorW, 32, S);
+
+    // chute inner-left wall (divides main floor from chute)
+    this.matter.add.rectangle(CHUTE_X - 16, MB + 72, 32, 144, S);
+
+    // chute bottom (keeps toy visible for a moment before scoring)
+    this.chuteSensorY = MB + 148;
+  }
+
+  /* ── spawnToys ──────────────────────────────────────── */
+  spawnToys() {
+    this.toys = [];
+
+    const cols   = 6;
+    const xStart = ML + 40;
+    const xEnd   = CHUTE_X - 40;
+    const xStep  = (xEnd - xStart) / (cols - 1);
+
+    for (let i = 0; i < TOY_COUNT; i++) {
+      const col    = i % cols;
+      const row    = Math.floor(i / cols);
+      const type   = TOY_DEFS[i % TOY_DEFS.length];
+      const radius = Phaser.Math.Between(18, 26);
+
+      const x = xStart + col * xStep + Phaser.Math.FloatBetween(-12, 12);
+      const y = MB - 30 - row * 68 + Phaser.Math.FloatBetween(-8, 8);
+
+      const body = this.matter.add.circle(x, y, radius, {
+        restitution: 0.25,
+        friction:    0.8,
+        frictionAir: 0.012,
+        density:     0.003,
+        label:       'toy',
+      });
+
+      this.toys.push({ body, type, radius, grabbed: false, scored: false });
+    }
+  }
+
+  /* ── buildUI ────────────────────────────────────────── */
+  buildUI() {
+    const F = (size, color) => ({
+      fontFamily: 'Arial', fontSize: `${size}px`, fill: color,
+    });
+
+    this.txtScore  = this.add.text(24, 22, '得分: 0',
+      { ...F(22, '#ffe066'), fontStyle: 'bold' }).setDepth(10);
+
+    this.txtTimer  = this.add.text(GW / 2, 22, this.fmtTime(GAME_TIME),
+      { ...F(22, '#ff9966') }).setOrigin(0.5, 0).setDepth(10);
+
+    this.txtLives  = this.add.text(GW - 24, 22, `次数: ${this.lives}`,
+      { ...F(20, '#88ccff') }).setOrigin(1, 0).setDepth(10);
+
+    this.txtStatus = this.add.text(GW / 2, RAIL_Y - 14, '',
+      { ...F(17, '#ffffff'), stroke: '#000', strokeThickness: 3 })
+      .setOrigin(0.5, 1).setDepth(10);
+
+    // sign text inside machine top
+    this.add.text(GW / 2, MT + 22, '✦ 抓 娃 娃 机 ✦',
+      { fontFamily: 'Arial', fontSize: '18px', fill: '#ff88cc',
+        stroke: '#880044', strokeThickness: 2 })
+      .setOrigin(0.5).setDepth(10);
+
+    // chute label
+    this.add.text(CHUTE_X + CHUTE_W / 2, MB + 6, '奖品口',
+      { ...F(13, '#44ff88') }).setOrigin(0.5, 0).setDepth(10);
+
+    // instructions
+    this.txtInstr = this.add.text(GW / 2, GH - 22,
+      '← → 移动爪子    [空格] 抓取    [R] 重新开始',
+      { ...F(13, '#445566') }).setOrigin(0.5, 1).setDepth(10);
+
+    // settling hint
+    this.txtSettle = this.add.text(GW / 2, GH / 2 + 80,
+      '正在准备…', { ...F(22, '#88aacc') }).setOrigin(0.5).setDepth(10);
+  }
+
+  /* ── buildInput ─────────────────────────────────────── */
+  buildInput() {
+    this.keys = this.input.keyboard.addKeys({
+      left:  Phaser.Input.Keyboard.KeyCodes.LEFT,
+      right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      space: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      r:     Phaser.Input.Keyboard.KeyCodes.R,
+    });
+  }
+
+  fmtTime(t) { return `⏱ ${String(t).padStart(2, '0')}`; }
+
+  /* ── update ─────────────────────────────────────────── */
+  update(time, delta) {
+    const dt = delta / 1000;
+
+    if (this.state === S.GAMEOVER) {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.scene.restart();
+      this.renderAll();
+      return;
+    }
+
+    // Let physics settle for ~2s before handing control to player
+    if (this.state === S.SETTLING) {
+      this.settleT += dt;
+      if (this.settleT >= 2.2) {
+        this.state = S.IDLE;
+        this.txtSettle.destroy();
+        this.setStatus('← → 移动爪子，空格键抓取！', '#88ccff');
+        this.time.delayedCall(2500, () => this.setStatus(''));
+      }
+      this.renderAll();
+      return;
+    }
+
+    this.processState(dt);
+    this.checkChute();
+    this.renderAll();
+  }
+
+  /* ── state machine ───────────────────────────────────── */
+  processState(dt) {
+    switch (this.state) {
+      case S.IDLE:       this.doIdle(dt);       break;
+      case S.DESCENDING: this.doDescending(dt); break;
+      case S.GRABBING:   this.doGrabbing(dt);   break;
+      case S.ASCENDING:  this.doAscending(dt);  break;
+      case S.TRAVELING:  this.doTraveling(dt);  break;
+      case S.DROPPING:   this.doDropping(dt);   break;
+      case S.RESETTING:  this.doResetting(dt);  break;
+    }
+  }
+
+  doIdle(dt) {
+    if (this.keys.left.isDown)
+      this.clawX = Math.max(CLAW_MIN_X, this.clawX - SPEED_SLIDE * dt);
+    if (this.keys.right.isDown)
+      this.clawX = Math.min(CLAW_MAX_X, this.clawX + SPEED_SLIDE * dt);
+
+    if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
+      if (this.lives > 0) {
+        this.lives--;
+        this.txtLives.setText(`次数: ${this.lives}`);
+        this.setStatus('');
+        this.grabAnimT = 0;
+        this.armAngle  = ARM_OPEN_ANGLE;
+        this.go(S.DESCENDING);
+      } else {
+        this.setStatus('次数用完！', '#ff4444');
+      }
+    }
+  }
+
+  doDescending(dt) {
+    this.clawY = Math.min(this.clawY + SPEED_DESCEND * dt, MAX_DESCENT_Y);
+    const near = this.toyInGrabZone();
+    if (near || this.clawY >= MAX_DESCENT_Y) {
+      this.grabAnimT = 0;
+      this.go(S.GRABBING);
+    }
+  }
+
+  doGrabbing(dt) {
+    this.grabAnimT += dt;
+    const p = Math.min(this.grabAnimT / GRAB_ANIM_DUR, 1);
+    this.armAngle = Phaser.Math.Linear(ARM_OPEN_ANGLE, ARM_CLOSED_ANGLE, p);
+    if (p >= 1) {
+      this.executeGrab();
+      this.grabAnimT = 0;
+      this.go(S.ASCENDING);
+    }
+  }
+
+  executeGrab() {
+    const toy = this.toyInGrabZone();
+    if (toy && Math.random() < GRAB_CHANCE) {
+      this.grabbedToy = toy;
+      toy.grabbed = true;
+      this.MJS.Body.setStatic(toy.body, true);
+      this.setStatus('抓住了！✨', '#00ff88');
+    } else {
+      const msg = toy ? '差一点就溜走了…' : '没抓到';
+      this.setStatus(msg, '#ffaa44');
+      this.time.delayedCall(1400, () => {
+        if (this.state !== S.GAMEOVER) this.setStatus('');
+      });
+    }
+  }
+
+  doAscending(dt) {
+    this.clawY = Math.max(this.clawY - SPEED_ASCEND * dt, RAIL_Y);
+    this.updateGrabbedToyPos();
+    if (this.clawY <= RAIL_Y) {
+      this.go(this.grabbedToy ? S.TRAVELING : S.RESETTING);
+    }
+  }
+
+  doTraveling(dt) {
+    const dx = CHUTE_DROP_X - this.clawX;
+    if (Math.abs(dx) > 2) {
+      const dir = dx > 0 ? 1 : -1;
+      this.clawX += dir * SPEED_TRAVEL * dt;
+      this.clawX = dir > 0
+        ? Math.min(this.clawX, CHUTE_DROP_X)
+        : Math.max(this.clawX, CHUTE_DROP_X);
+    }
+    this.updateGrabbedToyPos();
+    if (Math.abs(this.clawX - CHUTE_DROP_X) <= 2) {
+      this.grabAnimT = 0;
+      this.go(S.DROPPING);
+    }
+  }
+
+  doDropping(dt) {
+    this.grabAnimT += dt;
+    const p = Math.min(this.grabAnimT / GRAB_ANIM_DUR, 1);
+    this.armAngle = Phaser.Math.Linear(ARM_CLOSED_ANGLE, ARM_OPEN_ANGLE, p);
+
+    // Keep toy suspended for first half of open-anim, then release
+    if (p < 0.5) {
+      this.updateGrabbedToyPos();
+    } else if (this.grabbedToy) {
+      this.releaseToy();
+    }
+
+    if (p >= 1) {
+      this.setStatus('');
+      this.go(S.RESETTING);
+    }
+  }
+
+  doResetting(dt) {
+    const defaultX = (CLAW_MIN_X + CLAW_MAX_X) / 2;
+    const dx = defaultX - this.clawX;
+    if (Math.abs(dx) > 2) {
+      const dir = dx > 0 ? 1 : -1;
+      this.clawX += dir * SPEED_TRAVEL * dt;
+      this.clawX = dir > 0
+        ? Math.min(this.clawX, defaultX)
+        : Math.max(this.clawX, defaultX);
+    } else {
+      if (this.lives <= 0) this.doGameOver();
+      else this.go(S.IDLE);
+    }
+  }
+
+  /* ── helpers ─────────────────────────────────────────── */
+  go(newState) { this.state = newState; }
+
+  setStatus(msg, color = '#ffffff') {
+    this.txtStatus.setText(msg).setStyle({ fill: color });
+  }
+
+  toyInGrabZone() {
+    const halfW    = ARM_LEN * Math.sin(ARM_OPEN_ANGLE) + 8;
+    const zoneBot  = this.clawY + ARM_LEN + 12;
+    let best = null, bestDist = Infinity;
+    for (const t of this.toys) {
+      if (t.grabbed || t.scored) continue;
+      const { x, y } = t.body.position;
+      const dx = Math.abs(x - this.clawX);
+      const dy = y - this.clawY;
+      if (dx < halfW && dy > -6 && y < zoneBot) {
+        const d = Math.hypot(dx, dy);
+        if (d < bestDist) { bestDist = d; best = t; }
+      }
+    }
+    return best;
+  }
+
+  updateGrabbedToyPos() {
+    if (!this.grabbedToy) return;
+    this.MJS.Body.setPosition(this.grabbedToy.body, {
+      x: this.clawX,
+      y: this.clawY + ARM_LEN + this.grabbedToy.radius + 4,
+    });
+  }
+
+  releaseToy() {
+    if (!this.grabbedToy) return;
+    this.MJS.Body.setStatic(this.grabbedToy.body, false);
+    this.MJS.Body.setVelocity(this.grabbedToy.body, { x: 0, y: 3 });
+    this.grabbedToy.grabbed = false;
+    this.grabbedToy = null;
+  }
+
+  checkChute() {
+    for (const t of this.toys) {
+      if (t.grabbed || t.scored) continue;
+      const { x, y } = t.body.position;
+      if (x > CHUTE_X && x < MR && y > this.chuteSensorY) {
+        t.scored = true;
+        this.score++;
+        this.txtScore.setText(`得分: ${this.score}`);
+        this.showPopup(x, MB + 80, '+1 🎉');
+        this.time.delayedCall(700, () => {
+          const idx = this.toys.indexOf(t);
+          if (idx !== -1) {
+            this.matter.world.remove(t.body);
+            this.toys.splice(idx, 1);
+          }
+          // All cleared?
+          if (this.toys.length === 0) {
+            this.setStatus('全部抓完！太厉害了！🏆', '#ffdd00');
+            this.time.delayedCall(2000, () => this.doGameOver());
+          }
+        });
+      }
+    }
+  }
+
+  showPopup(x, y, msg) {
+    const t = this.add.text(x, y, msg, {
+      fontFamily: 'Arial', fontSize: '28px', fill: '#ffe066',
+      stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(20);
+    this.tweens.add({
+      targets: t, y: y - 75, alpha: 0, duration: 900,
+      ease: 'Power1', onComplete: () => t.destroy(),
+    });
+  }
+
+  doGameOver() {
+    if (this.state === S.GAMEOVER) return;
+    if (this.grabbedToy) this.releaseToy();
+    this.state = S.GAMEOVER;
+
+    const F = (size, col) => ({
+      fontFamily: 'Arial', fontSize: `${size}px`, fill: col,
+    });
+    this.add.rectangle(GW / 2, GH / 2, GW, GH, 0x000000, 0.78).setDepth(48);
+    this.add.text(GW / 2, GH / 2 - 100, '游戏结束', {
+      ...F(54, '#ffe066'), stroke: '#cc5500', strokeThickness: 5,
+    }).setOrigin(0.5).setDepth(49);
+
+    const rank = this.score === 0 ? '再练练吧！' :
+                 this.score < 3   ? '不错！'    :
+                 this.score < 6   ? '很厉害！'  : '大师级！🏆';
+    this.add.text(GW / 2, GH / 2 - 20, `抓到了 ${this.score} 个娃娃！`, {
+      ...F(30, '#ffffff'),
+    }).setOrigin(0.5).setDepth(49);
+    this.add.text(GW / 2, GH / 2 + 34, rank, {
+      ...F(26, '#88ddff'),
+    }).setOrigin(0.5).setDepth(49);
+    this.add.text(GW / 2, GH / 2 + 90, '按 [R] 再玩一次', {
+      ...F(20, '#667788'),
+    }).setOrigin(0.5).setDepth(49);
+  }
+
+  /* =========================================================
+     RENDERING
+     ========================================================= */
+  renderAll() {
+    this.gBg.clear();
+    this.gToys.clear();
+    this.gClaw.clear();
+    this.gFg.clear();
+
+    this.drawBackground();
+    this.drawToys();
+    this.drawClaw();
+    this.drawForeground();
+  }
+
+  /* ── drawBackground ─────────────────────────────────── */
+  drawBackground() {
+    const g = this.gBg;
+
+    // Machine interior
+    g.fillStyle(0x06101e, 1);
+    g.fillRect(ML, MT, MR - ML, MB - MT);
+
+    // Subtle grid
+    g.lineStyle(1, 0x0c1c2e, 1);
+    for (let y = MT + 25; y < MB; y += 32) {
+      g.beginPath(); g.moveTo(ML, y); g.lineTo(MR, y); g.strokePath();
+    }
+    for (let x = ML + 25; x < MR; x += 32) {
+      g.beginPath(); g.moveTo(x, MT); g.lineTo(x, MB); g.strokePath();
+    }
+
+    // Left floor (visible part)
+    g.fillStyle(0x152030, 1);
+    g.fillRect(ML, MB, CHUTE_X - ML, 32);
+
+    // Chute channel
+    g.fillStyle(0x001810, 1);
+    g.fillRect(CHUTE_X, MB, CHUTE_W, 170);
+
+    // Chute arrow
+    const ax = CHUTE_DROP_X;
+    g.lineStyle(2, 0x00bb55, 0.6);
+    g.beginPath(); g.moveTo(ax, MB + 10); g.lineTo(ax, MB + 55); g.strokePath();
+    g.fillStyle(0x00bb55, 0.6);
+    g.fillTriangle(ax, MB + 66, ax - 10, MB + 53, ax + 10, MB + 53);
+  }
+
+  /* ── drawToys ──────────────────────────────────────────── */
+  drawToys() {
+    const g = this.gToys;
+
+    for (const toy of this.toys) {
+      const { x, y } = toy.body.position;
+      const r = toy.radius;
+      const tp = toy.type;
+
+      // Body
+      g.fillStyle(tp.c, 1);
+      g.fillCircle(x, y, r);
+
+      // Lower shadow
+      g.fillStyle(tp.ear, 0.30);
+      g.fillEllipse(x, y + r * 0.28, r * 1.85, r * 1.1);
+
+      // Top shine
+      g.fillStyle(tp.hi, 0.55);
+      g.fillCircle(x - r * 0.32, y - r * 0.32, r * 0.36);
+
+      // Ears (bear / bunny / cat / dog)
+      if (['bear','bunny','cat','dog'].includes(tp.name)) {
+        const er = tp.name === 'bunny' ? r * 0.45 : r * 0.30;
+        g.fillStyle(tp.c, 1);
+        g.fillCircle(x - r * 0.58, y - r * 0.72, er);
+        g.fillCircle(x + r * 0.58, y - r * 0.72, er);
+        g.fillStyle(tp.ear, 0.55);
+        g.fillCircle(x - r * 0.58, y - r * 0.74, er * 0.55);
+        g.fillCircle(x + r * 0.58, y - r * 0.74, er * 0.55);
+      }
+
+      // Duck beak
+      if (tp.name === 'duck') {
+        g.fillStyle(0xff8800, 1);
+        g.fillEllipse(x, y + r * 0.38, r * 0.62, r * 0.28);
+      }
+
+      // Star points (star type gets a pale overlay)
+      if (tp.name === 'star') {
+        g.fillStyle(0xffffff, 0.18);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+          g.fillCircle(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62, r * 0.18);
+        }
+      }
+
+      // Eyes
+      g.fillStyle(0x000000, 1);
+      g.fillCircle(x - r * 0.28, y - r * 0.08, r * 0.13);
+      g.fillCircle(x + r * 0.28, y - r * 0.08, r * 0.13);
+      // Eye shine
+      g.fillStyle(0xffffff, 0.85);
+      g.fillCircle(x - r * 0.23, y - r * 0.13, r * 0.057);
+      g.fillCircle(x + r * 0.33, y - r * 0.13, r * 0.057);
+
+      // Smile arc
+      g.lineStyle(1.5, 0x000000, 0.75);
+      g.beginPath();
+      g.arc(x, y + r * 0.12, r * 0.24, 0.15, Math.PI - 0.15, false);
+      g.strokePath();
+
+      // Outline
+      g.lineStyle(1.5, 0x000000, 0.18);
+      g.strokeCircle(x, y, r);
+    }
+  }
+
+  /* ── drawClaw ──────────────────────────────────────────── */
+  drawClaw() {
+    const g   = this.gClaw;
+    const cx  = this.clawX;
+    const cy  = this.clawY;
+    const aL  = ARM_LEN;
+    const ang = this.armAngle;
+
+    // ── cable ──
+    g.lineStyle(3, 0x999999, 1);
+    g.beginPath();
+    g.moveTo(cx, RAIL_Y + 9);
+    g.lineTo(cx, cy - 9);
+    g.strokePath();
+
+    // ── hub ──
+    g.fillStyle(0x778899, 1);
+    g.fillCircle(cx, cy, 11);
+    g.fillStyle(0xaabbcc, 1);
+    g.fillCircle(cx - 3, cy - 3, 5);
+
+    // ── arms ──
+    // Left: angle = PI/2 + ang  (points down-left when open)
+    // Right: PI/2 - ang (points down-right when open)
+    const LA = Math.PI / 2 + ang;
+    const RA = Math.PI / 2 - ang;
+    const lx = cx + Math.cos(LA) * aL,  ly = cy + Math.sin(LA) * aL;
+    const rx = cx + Math.cos(RA) * aL,  ry = cy + Math.sin(RA) * aL;
+
+    // Arm shadows
+    g.lineStyle(9, 0x223344, 0.4);
+    g.beginPath(); g.moveTo(cx + 1, cy + 9); g.lineTo(lx + 1, ly + 1); g.strokePath();
+    g.beginPath(); g.moveTo(cx - 1, cy + 9); g.lineTo(rx - 1, ry + 1); g.strokePath();
+
+    // Main arms
+    g.lineStyle(7, 0x778899, 1);
+    g.beginPath(); g.moveTo(cx, cy + 8); g.lineTo(lx, ly); g.strokePath();
+    g.beginPath(); g.moveTo(cx, cy + 8); g.lineTo(rx, ry); g.strokePath();
+
+    // Arm highlight
+    g.lineStyle(2, 0xaabbcc, 0.5);
+    g.beginPath(); g.moveTo(cx - 1, cy + 8); g.lineTo(lx - 1, ly); g.strokePath();
+    g.beginPath(); g.moveTo(cx + 1, cy + 8); g.lineTo(rx + 1, ry); g.strokePath();
+
+    // ── claw tips (curl inward) ──
+    const tipL = 20;
+    const curl = 0.68;
+    const ltx = lx + Math.cos(LA - curl) * tipL, lty = ly + Math.sin(LA - curl) * tipL;
+    const rtx = rx + Math.cos(RA + curl) * tipL, rty = ry + Math.sin(RA + curl) * tipL;
+
+    g.lineStyle(5, 0x667788, 1);
+    g.beginPath(); g.moveTo(lx, ly); g.lineTo(ltx, lty); g.strokePath();
+    g.beginPath(); g.moveTo(rx, ry); g.lineTo(rtx, rty); g.strokePath();
+
+    // tip caps
+    g.fillStyle(0x556677, 1);
+    g.fillCircle(ltx, lty, 4);
+    g.fillCircle(rtx, rty, 4);
+
+    // ── trolley ──
+    g.fillStyle(0x445566, 1);
+    g.fillRoundedRect(cx - 24, RAIL_Y - 15, 48, 24, 4);
+    g.lineStyle(2, 0x8899bb, 1);
+    g.strokeRoundedRect(cx - 24, RAIL_Y - 15, 48, 24, 4);
+    // wheels
+    g.fillStyle(0x7788aa, 1);
+    g.fillCircle(cx - 16, RAIL_Y - 2, 4);
+    g.fillCircle(cx + 16, RAIL_Y - 2, 4);
+  }
+
+  /* ── drawForeground ─────────────────────────────────── */
+  drawForeground() {
+    const g = this.gFg;
+
+    // Side panels (outside machine)
+    g.fillStyle(0x111122, 1);
+    g.fillRect(0, 0, ML, GH);
+    g.fillRect(MR, 0, GW - MR, GH);
+    // Top bar
+    g.fillRect(0, 0, GW, MT);
+    // Bottom bar
+    g.fillRect(0, MB + 32, GW, GH - MB - 32);
+
+    // Machine outer frame — layered neon glow (fake bloom)
+    const glows = [
+      { w: 10, col: 0x0044aa, a: 0.12 },
+      { w: 7,  col: 0x0066cc, a: 0.20 },
+      { w: 4,  col: 0x0099ff, a: 0.35 },
+      { w: 2,  col: 0x44ccff, a: 0.85 },
+    ];
+    for (const { w, col, a } of glows) {
+      g.lineStyle(w, col, a);
+      g.strokeRect(ML, MT, MR - ML, MB - MT);
+    }
+
+    // Inner frame ring
+    g.lineStyle(1.5, 0x224466, 0.45);
+    g.strokeRect(ML + 4, MT + 4, MR - ML - 8, MB - MT - 8);
+
+    // Rail bar
+    g.fillStyle(0x3a4a5a, 1);
+    g.fillRoundedRect(ML + 5, RAIL_Y - 12, MR - ML - 10, 24, 4);
+    g.lineStyle(2, 0x7788aa, 1);
+    g.strokeRoundedRect(ML + 5, RAIL_Y - 12, MR - ML - 10, 24, 4);
+    // Rail center groove
+    g.lineStyle(2, 0x22334a, 1);
+    g.beginPath();
+    g.moveTo(ML + 8, RAIL_Y); g.lineTo(MR - 8, RAIL_Y);
+    g.strokePath();
+
+    // Sign box (above toys, below rail)
+    g.fillStyle(0x04090f, 0.85);
+    g.fillRoundedRect(ML + 8, MT + 8, MR - ML - 16, 36, 5);
+    // sign glow
+    g.lineStyle(1.5, 0xff44aa, 0.6);
+    g.strokeRoundedRect(ML + 8, MT + 8, MR - ML - 16, 36, 5);
+
+    // Chute frame glow
+    const cg = [
+      { w: 6, col: 0x004400, a: 0.15 },
+      { w: 3, col: 0x006600, a: 0.35 },
+      { w: 1.5, col: 0x00cc55, a: 0.9 },
+    ];
+    for (const { w, col, a } of cg) {
+      g.lineStyle(w, col, a);
+      g.strokeRect(CHUTE_X, MB, CHUTE_W, 170);
+    }
+    // Chute divider wall
+    g.fillStyle(0x152030, 1);
+    g.fillRect(CHUTE_X - 5, MB, 5, 170);
+
+    // Corner screws
+    const screws = [
+      [ML + 14, MT + 14], [MR - 14, MT + 14],
+      [ML + 14, MB - 14], [MR - 14, MB - 14],
+    ];
+    for (const [sx, sy] of screws) {
+      g.fillStyle(0x445566, 1);
+      g.fillCircle(sx, sy, 5);
+      g.lineStyle(1, 0x778899, 0.7);
+      g.strokeCircle(sx, sy, 5);
+      // X slot
+      g.lineStyle(1, 0x223344, 0.8);
+      g.beginPath(); g.moveTo(sx - 3, sy - 3); g.lineTo(sx + 3, sy + 3); g.strokePath();
+      g.beginPath(); g.moveTo(sx + 3, sy - 3); g.lineTo(sx - 3, sy + 3); g.strokePath();
+    }
+
+    // Glass reflection strip (left side)
+    g.fillStyle(0xffffff, 0.025);
+    g.fillRect(ML, MT, 28, MB - MT);
+  }
+}
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+new Phaser.Game({
+  type:   Phaser.AUTO,
+  width:  GW,
+  height: GH,
+  parent: 'game-container',
+  backgroundColor: '#07070f',
+  physics: {
+    default: 'matter',
+    matter: {
+      gravity: { y: 3.0 },
+      debug: false,
+    },
+  },
+  scene: GameScene,
+});
+</script>
+</body>
+</html>
