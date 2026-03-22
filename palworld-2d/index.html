@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>幻兽帕鲁 2D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      border: 2px solid #334;
+      image-rendering: pixelated;
+    }
+    #hint {
+      color: #667;
+      margin-top: 6px;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="900" height="600"></canvas>
+  <div id="hint">WASD 移动 · Z/空格 攻击 · X 投帕鲁球 · 1-6 派出/召回帕鲁</div>
+  <script src="game.js"></script>
+</body>
+</html>
