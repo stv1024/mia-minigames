@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mia's Word Bloom - Crossword</title>
+  <style>
+    :root {
+      --ink: #243126;
+      --muted: #637061;
+      --paper: #fffdf7;
+      --soft: #f5f0e4;
+      --leaf: #3f7d58;
+      --leaf-dark: #28583f;
+      --rose: #d95875;
+      --sun: #f4b740;
+      --sky: #d8edf4;
+      --line: #d7d0be;
+      --shadow: 0 18px 50px rgba(47, 58, 44, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(244, 183, 64, 0.22), transparent 28%),
+        linear-gradient(135deg, #d9f0ed 0%, #f8f0d9 52%, #f4d9e3 100%);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    #app {
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 22px 0 30px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 54px;
+      height: 54px;
+      border: 2px solid rgba(63, 125, 88, 0.28);
+      border-radius: 8px;
+      background: rgba(255, 253, 247, 0.74);
+      box-shadow: var(--shadow);
+      font-size: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 38px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .tab,
+    .primary,
+    .ghost,
+    .level-pill {
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+
+    .tab {
+      padding: 10px 14px;
+      color: var(--leaf-dark);
+      background: rgba(255, 253, 247, 0.72);
+      border: 1px solid rgba(63, 125, 88, 0.18);
+    }
+
+    .tab.active,
+    .primary {
+      color: #fff;
+      background: var(--leaf);
+      box-shadow: 0 10px 22px rgba(63, 125, 88, 0.22);
+    }
+
+    .tab:active,
+    .primary:active,
+    .ghost:active,
+    .level-pill:active {
+      transform: translateY(1px);
+    }
+
+    .game-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .board-panel,
+    .side-panel,
+    .badges-panel {
+      border: 1px solid rgba(115, 98, 67, 0.16);
+      border-radius: 8px;
+      background: rgba(255, 253, 247, 0.86);
+      box-shadow: var(--shadow);
+    }
+
+    .board-panel {
+      padding: 18px;
+    }
+
+    .level-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .eyebrow {
+      color: var(--rose);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .level-title {
+      margin: 3px 0 0;
+      font-size: 24px;
+    }
+
+    .chapter-track {
+      min-width: 210px;
+      text-align: right;
+    }
+
+    .progress-line {
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8e0d0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--leaf), var(--sun));
+    }
+
+    .chapter-text {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .puzzle-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 510px;
+      padding: 14px;
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.48) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.48) 1px, transparent 1px),
+        var(--sky);
+      background-size: 28px 28px;
+      border: 1px solid rgba(63, 125, 88, 0.12);
+    }
+
+    .crossword-grid {
+      display: grid;
+      width: min(100%, 620px);
+      gap: 4px;
+      align-content: center;
+      justify-content: center;
+    }
+
+    .cell {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 1;
+      min-width: 28px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+    }
+
+    .cell.blank {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .cell.active {
+      cursor: pointer;
+      color: var(--ink);
+      background: #fffefa;
+      border-color: #cfc2a5;
+      box-shadow: 0 2px 8px rgba(80, 65, 40, 0.14);
+    }
+
+    .cell.related {
+      background: #fff3c8;
+      border-color: #efc86a;
+    }
+
+    .cell.selected {
+      outline: 3px solid var(--rose);
+      outline-offset: 1px;
+      background: #fff;
+    }
+
+    .cell.wrong {
+      background: #ffe1e8;
+      border-color: #e47288;
+    }
+
+    .cell-number {
+      position: absolute;
+      top: 3px;
+      left: 4px;
+      color: #8a7656;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .cell-letter {
+      font-size: clamp(16px, 2.7vw, 25px);
+      font-weight: 800;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .side-panel {
+      padding: 16px;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--soft);
+      text-align: center;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 21px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .section-title {
+      margin: 14px 0 8px;
+      font-size: 15px;
+    }
+
+    .clue-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .clue {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e0d6bf;
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fffaf0;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .clue.active {
+      border-color: var(--leaf);
+      background: #edf8ee;
+    }
+
+    .clue.done {
+      color: #61705f;
+      background: #f0f5ed;
+    }
+
+    .clue-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .clue small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .primary,
+    .ghost {
+      min-height: 42px;
+      padding: 9px 12px;
+      font-weight: 700;
+    }
+
+    .ghost {
+      color: var(--leaf-dark);
+      background: #edf4eb;
+      border: 1px solid rgba(63, 125, 88, 0.18);
+    }
+
+    .level-map {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 7px;
+    }
+
+    .level-pill {
+      min-height: 38px;
+      color: var(--ink);
+      background: #f4ecd9;
+      border: 1px solid #dfd1b5;
+      font-weight: 800;
+    }
+
+    .level-pill.current {
+      color: #fff;
+      background: var(--rose);
+      border-color: var(--rose);
+    }
+
+    .level-pill.done {
+      background: #dff0da;
+      border-color: #a8d09e;
+    }
+
+    .level-pill.locked {
+      cursor: not-allowed;
+      color: #a49a88;
+      background: #ece6dc;
+    }
+
+    .badges-panel {
+      padding: 18px;
+    }
+
+    .badge-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
+      gap: 12px;
+    }
+
+    .badge {
+      min-height: 160px;
+      padding: 14px;
+      border: 1px solid #dfd4bd;
+      border-radius: 8px;
+      background: #fffaf0;
+      text-align: center;
+    }
+
+    .badge.locked {
+      color: #82796c;
+      background: #eee7dc;
+    }
+
+    .badge-emoji {
+      display: block;
+      font-size: 45px;
+      line-height: 1.1;
+    }
+
+    .badge strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+
+    .badge span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      z-index: 10;
+      padding: 18px;
+      background: rgba(31, 38, 32, 0.5);
+    }
+
+    .modal {
+      width: min(420px, 100%);
+      padding: 24px;
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+      text-align: center;
+    }
+
+    .modal-icon {
+      font-size: 70px;
+      line-height: 1;
+    }
+
+    .modal h2 {
+      margin: 12px 0 8px;
+      font-size: 26px;
+    }
+
+    .modal p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .shake {
+      animation: shake 0.28s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+
+    @media (max-width: 940px) {
+      .topbar,
+      .level-head {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .tabs {
+        justify-content: flex-start;
+      }
+
+      .game-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .chapter-track {
+        min-width: 0;
+        text-align: left;
+      }
+
+      .puzzle-wrap {
+        min-height: 420px;
+      }
+
+      .badge-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100vw - 18px, 1180px);
+        padding-top: 12px;
+      }
+
+      .brand-mark {
+        width: 46px;
+        height: 46px;
+      }
+
+      .board-panel,
+      .side-panel,
+      .badges-panel {
+        padding: 12px;
+      }
+
+      .puzzle-wrap {
+        min-height: 340px;
+        padding: 8px;
+      }
+
+      .crossword-grid {
+        gap: 3px;
+      }
+
+      .cell {
+        border-radius: 5px;
+      }
+
+      .stat-row,
+      .actions {
+        grid-template-columns: 1fr;
+      }
+
+      .badge-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">🌸</div>
+          <div>
+            <h1>Mia's Word Bloom</h1>
+            <div class="subtitle">Crossword spelling adventure</div>
+          </div>
+        </div>
+        <nav class="tabs" aria-label="主导航">
+          <button class="tab" :class="{ active: view === 'game' }" @click="view = 'game'">闯关</button>
+          <button class="tab" :class="{ active: view === 'badges' }" @click="view = 'badges'">徽章</button>
+        </nav>
+      </header>
+
+      <section v-if="view === 'game'" class="game-layout">
+        <div class="board-panel">
+          <div class="level-head">
+            <div>
+              <div class="eyebrow">Chapter {{ chapterNumber }} · Level {{ currentLevel.number }}</div>
+              <h2 class="level-title">{{ currentLevel.title }}</h2>
+            </div>
+            <div class="chapter-track">
+              <div class="progress-line" aria-hidden="true">
+                <div class="progress-fill" :style="{ width: chapterProgress + '%' }"></div>
+              </div>
+              <div class="chapter-text">{{ currentChapter.title }} · {{ chapterDoneCount }}/5</div>
+            </div>
+          </div>
+
+          <div class="puzzle-wrap" :class="{ shake: shakeBoard }">
+            <div
+              class="crossword-grid"
+              :style="{ gridTemplateColumns: `repeat(${grid.cols}, minmax(28px, 1fr))` }"
+              role="grid"
+              aria-label="crossword board"
+            >
+              <button
+                v-for="cell in grid.cells"
+                :key="cell.key"
+                class="cell"
+                :class="cellClass(cell)"
+                :style="{ gridColumn: cell.col + 1, gridRow: cell.row + 1 }"
+                :disabled="!cell.active"
+                @click="selectCell(cell)"
+              >
+                <span v-if="cell.number" class="cell-number">{{ cell.number }}</span>
+                <span v-if="cell.active" class="cell-letter">{{ answers[cell.key] || '' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="stat-row">
+            <div class="stat">
+              <strong>{{ completedCount }}</strong>
+              <span>完成</span>
+            </div>
+            <div class="stat">
+              <strong>{{ progress.badges.length }}</strong>
+              <span>徽章</span>
+            </div>
+            <div class="stat">
+              <strong>{{ currentLevel.words.length }}</strong>
+              <span>单词</span>
+            </div>
+          </div>
+
+          <h3 class="section-title">Clues</h3>
+          <div class="clue-list">
+            <button
+              v-for="placement in placements"
+              :key="placement.id"
+              class="clue"
+              :class="{ active: placement.id === currentPlacementId, done: isPlacementComplete(placement) }"
+              @click="selectPlacement(placement.id)"
+            >
+              <span class="clue-main">
+                <span>{{ placement.number }}. {{ placement.icon }} {{ placement.zh }}</span>
+                <span>{{ placement.direction === 'across' ? '→' : '↓' }}</span>
+              </span>
+              <small>{{ placement.clue }} · {{ placement.word.length }} letters</small>
+            </button>
+          </div>
+
+          <div class="actions">
+            <button class="primary" @click="checkAnswers">检查</button>
+            <button class="ghost" @click="clearLevel">清空本关</button>
+          </div>
+
+          <h3 class="section-title">Levels</h3>
+          <div class="level-map">
+            <button
+              v-for="level in levels"
+              :key="level.number"
+              class="level-pill"
+              :class="{ current: level.number === currentLevelNumber, done: isCompleted(level.number), locked: isLocked(level.number) }"
+              :disabled="isLocked(level.number)"
+              @click="goToLevel(level.number)"
+            >
+              {{ isLocked(level.number) ? '🔒' : level.number }}
+            </button>
+          </div>
+        </aside>
+      </section>
+
+      <section v-else class="badges-panel">
+        <div class="level-head">
+          <div>
+            <div class="eyebrow">Badge Collection</div>
+            <h2 class="level-title">宝箱徽章</h2>
+          </div>
+          <button class="ghost" @click="resetProgress">重置进度</button>
+        </div>
+
+        <div class="badge-grid">
+          <article
+            v-for="badge in badges"
+            :key="badge.id"
+            class="badge"
+            :class="{ locked: !hasBadge(badge.id) }"
+          >
+            <span class="badge-emoji">{{ hasBadge(badge.id) ? badge.emoji : '🎁' }}</span>
+            <strong>{{ hasBadge(badge.id) ? badge.name : `第 ${badge.chapter} 章宝箱` }}</strong>
+            <span>{{ hasBadge(badge.id) ? badge.note : `完成第 ${badge.from}-${badge.to} 关后开启` }}</span>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div v-if="modal.show" class="modal-backdrop">
+      <div class="modal">
+        <div class="modal-icon">{{ modalIcon }}</div>
+        <h2>{{ modalTitle }}</h2>
+        <p>{{ modalText }}</p>
+        <button v-if="modal.type === 'chest' && !modal.opened" class="primary" @click="openChest">打开宝箱</button>
+        <button v-else class="primary" @click="continueAfterModal">{{ currentLevelNumber >= levels.length ? '回到徽章' : '下一关' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { computed, createApp, nextTick, onMounted, reactive, ref, watch } from "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js";
+
+    const STORAGE_KEY = "mia-word-bloom-progress-v1";
+
+    const WORDS = {
+      butterflies: { zh: "蝴蝶们", clue: "More than one butterfly.", icon: "🦋" },
+      carnation: { zh: "康乃馨", clue: "A pretty flower often given with love.", icon: "🌸" },
+      beautiful: { zh: "美丽的", clue: "Very pretty or lovely.", icon: "✨" },
+      bicycle: { zh: "自行车", clue: "A two-wheel ride you pedal.", icon: "🚲" },
+      vegetable: { zh: "蔬菜", clue: "A healthy plant food.", icon: "🥦" },
+      pavement: { zh: "人行道", clue: "A hard path beside or on a road.", icon: "🛣️" },
+      traffic: { zh: "交通", clue: "Cars and buses moving on roads.", icon: "🚦" },
+      giraffe: { zh: "长颈鹿", clue: "A tall animal with a very long neck.", icon: "🦒" },
+      elephant: { zh: "大象", clue: "A huge animal with a trunk.", icon: "🐘" },
+      butterfly: { zh: "蝴蝶", clue: "A colorful insect with wings.", icon: "🦋" },
+      together: { zh: "一起", clue: "With someone else, not alone.", icon: "🤝" },
+      trousers: { zh: "长裤", clue: "Clothes for both legs.", icon: "👖" },
+      sweater: { zh: "毛衣", clue: "Warm clothes for the top of your body.", icon: "🧥" },
+      rainbow: { zh: "彩虹", clue: "Colors in the sky after rain.", icon: "🌈" },
+      shining: { zh: "闪亮的", clue: "Giving out bright light.", icon: "🌟" },
+      smooth: { zh: "光滑的", clue: "Not rough when you touch it.", icon: "🫧" },
+      rough: { zh: "粗糙的", clue: "Not smooth when you touch it.", icon: "🪨" },
+      zebra: { zh: "斑马", clue: "A striped black-and-white animal.", icon: "🦓" },
+      balloon: { zh: "气球", clue: "A light party toy filled with air.", icon: "🎈" },
+      outside: { zh: "外面", clue: "Not inside a room or house.", icon: "🌳" },
+      inside: { zh: "里面", clue: "In a room, box, or place.", icon: "🏠" },
+      autumn: { zh: "秋天", clue: "The season when leaves fall.", icon: "🍂" },
+      thirsty: { zh: "口渴的", clue: "Needing a drink.", icon: "🥤" },
+      angry: { zh: "生气的", clue: "Feeling mad.", icon: "😠" },
+      winter: { zh: "冬天", clue: "The cold season.", icon: "❄️" },
+      summer: { zh: "夏天", clue: "The hot season.", icon: "☀️" },
+      cloudy: { zh: "多云的", clue: "With many clouds in the sky.", icon: "☁️" },
+      rainy: { zh: "下雨的", clue: "Wet weather from the sky.", icon: "🌧️" },
+      windy: { zh: "刮风的", clue: "With lots of wind.", icon: "💨" },
+      sunny: { zh: "晴朗的", clue: "Bright with sun.", icon: "☀️" },
+      lovely: { zh: "可爱的", clue: "Very nice and sweet.", icon: "💗" },
+      strong: { zh: "强壮的", clue: "Having lots of power.", icon: "💪" },
+      season: { zh: "季节", clue: "Spring, summer, autumn, or winter.", icon: "📅" },
+      listen: { zh: "听", clue: "Use your ears carefully.", icon: "👂" },
+      touch: { zh: "触摸", clue: "Feel something with your hand.", icon: "👉" },
+      feel: { zh: "感觉", clue: "Know by touching or in your heart.", icon: "✋" },
+      skate: { zh: "滑冰", clue: "Move on ice with special shoes.", icon: "⛸️" },
+      hop: { zh: "跳", clue: "Jump on one foot or with small jumps.", icon: "🐇" },
+      salad: { zh: "沙拉", clue: "A cold dish with vegetables.", icon: "🥗" },
+      carrot: { zh: "胡萝卜", clue: "An orange vegetable.", icon: "🥕" },
+      noodles: { zh: "面条", clue: "Long thin food in soup or sauce.", icon: "🍜" },
+      short: { zh: "短的", clue: "Not long.", icon: "📏" },
+      long: { zh: "长的", clue: "Not short.", icon: "📏" },
+      arm: { zh: "胳膊", clue: "A body part from shoulder to hand.", icon: "💪" },
+      tail: { zh: "尾巴", clue: "The back part of many animals.", icon: "🐕" },
+      pig: { zh: "猪", clue: "A farm animal that says oink.", icon: "🐷" },
+      panda: { zh: "熊猫", clue: "A black-and-white bear from China.", icon: "🐼" },
+      bear: { zh: "熊", clue: "A big furry animal.", icon: "🐻" },
+      snake: { zh: "蛇", clue: "A long animal with no legs.", icon: "🐍" },
+      cross: { zh: "横穿", clue: "Go from one side to the other.", icon: "🚸" },
+      road: { zh: "路", clue: "Cars travel on it.", icon: "🛣️" },
+      light: { zh: "灯", clue: "It helps you see, or tells traffic to go.", icon: "🚦" },
+      wait: { zh: "等待", clue: "Stay until it is time.", icon: "⏳" },
+      stop: { zh: "停止", clue: "Do not go.", icon: "🛑" },
+      paper: { zh: "纸", clue: "You write or draw on it.", icon: "📄" },
+      dress: { zh: "连衣裙", clue: "A one-piece item of clothing.", icon: "👗" },
+      shorts: { zh: "短裤", clue: "Short trousers.", icon: "🩳" },
+      socks: { zh: "袜子", clue: "Clothes for your feet.", icon: "🧦" },
+      hungry: { zh: "饿的", clue: "Needing food.", icon: "🍽️" },
+      tired: { zh: "累的", clue: "Needing rest or sleep.", icon: "😴" }
+    };
+
+    const LEVEL_WORDS = [
+      ["arm", "pig", "hop"],
+      ["tail", "bear", "long"],
+      ["road", "stop", "wait"],
+      ["light", "cross", "short"],
+      ["socks", "dress", "paper"],
+      ["panda", "zebra", "snake"],
+      ["salad", "carrot", "noodles"],
+      ["sunny", "rainy", "windy"],
+      ["cloudy", "winter", "summer"],
+      ["autumn", "season", "lovely"],
+      ["feel", "touch", "listen", "skate"],
+      ["inside", "outside", "together"],
+      ["angry", "thirsty", "tired"],
+      ["smooth", "rough", "strong"],
+      ["bicycle", "traffic", "pavement"],
+      ["sweater", "trousers", "shorts"],
+      ["giraffe", "elephant", "butterfly"],
+      ["vegetable", "carnation", "beautiful"],
+      ["rainbow", "shining", "butterflies"],
+      ["balloon", "lovely", "together", "rainbow"],
+      ["pig", "panda", "bear", "snake"],
+      ["road", "traffic", "light", "wait"],
+      ["sunny", "cloudy", "rainy", "windy"],
+      ["salad", "carrot", "noodles", "hungry"],
+      ["dress", "socks", "shorts", "sweater"],
+      ["autumn", "winter", "summer", "season"],
+      ["smooth", "rough", "touch", "feel"],
+      ["elephant", "giraffe", "zebra", "panda"],
+      ["bicycle", "pavement", "road", "cross"],
+      ["carnation", "butterfly", "butterflies", "beautiful"],
+      ["arm", "tail", "strong", "short", "long"],
+      ["listen", "together", "inside", "outside", "angry"],
+      ["thirsty", "hungry", "tired", "salad", "noodles"],
+      ["sunny", "shining", "rainbow", "lovely", "beautiful"],
+      ["sweater", "trousers", "dress", "shorts", "socks"],
+      ["traffic", "pavement", "light", "stop", "wait"],
+      ["bear", "pig", "panda", "snake", "zebra"],
+      ["vegetable", "carrot", "salad", "noodles", "hungry"],
+      ["winter", "summer", "autumn", "cloudy", "rainy"],
+      ["bicycle", "balloon", "carnation", "butterfly", "giraffe"],
+      ["touch", "feel", "listen", "smooth", "rough", "strong"],
+      ["cross", "road", "traffic", "pavement", "light", "stop"],
+      ["outside", "inside", "together", "lovely", "beautiful", "shining"],
+      ["elephant", "giraffe", "butterfly", "butterflies", "zebra", "panda"],
+      ["hungry", "thirsty", "tired", "angry", "wait", "stop"],
+      ["sunny", "rainy", "windy", "cloudy", "season", "autumn"],
+      ["dress", "shorts", "socks", "sweater", "trousers", "paper"],
+      ["salad", "carrot", "noodles", "vegetable", "strong", "lovely"],
+      ["bicycle", "balloon", "rainbow", "carnation", "beautiful", "shining"],
+      ["butterflies", "elephant", "pavement", "together", "vegetable", "beautiful"]
+    ];
+
+    const CHAPTERS = [
+      "First Sprouts", "Animal Friends", "Weather Walk", "Long Word Garden", "Street Picnic",
+      "Season Mix", "Touch and Feel", "Big Review", "Brave Speller", "Bloom Master"
+    ];
+
+    const BADGES = [
+      { id: "sprout", chapter: 1, from: 1, to: 5, emoji: "🌱", name: "Word Sprout", note: "Started the spelling garden." },
+      { id: "butterfly", chapter: 2, from: 6, to: 10, emoji: "🦋", name: "Butterfly Reader", note: "Found animal and season words." },
+      { id: "rainbow", chapter: 3, from: 11, to: 15, emoji: "🌈", name: "Rainbow Solver", note: "Solved feelings, weather, and roads." },
+      { id: "bike", chapter: 4, from: 16, to: 20, emoji: "🚲", name: "Street Explorer", note: "Crossed into longer spelling." },
+      { id: "panda", chapter: 5, from: 21, to: 25, emoji: "🐼", name: "Animal Pal", note: "Kept four-word puzzles steady." },
+      { id: "noodles", chapter: 6, from: 26, to: 30, emoji: "🍜", name: "Snack Star", note: "Mixed food, seasons, and long words." },
+      { id: "sun", chapter: 7, from: 31, to: 35, emoji: "☀️", name: "Weather Wizard", note: "Completed five-word challenges." },
+      { id: "dress", chapter: 8, from: 36, to: 40, emoji: "👗", name: "Closet Champ", note: "Reviewed clothes, animals, and streets." },
+      { id: "flower", chapter: 9, from: 41, to: 45, emoji: "🌸", name: "Garden Hero", note: "Handled six-word grids." },
+      { id: "star", chapter: 10, from: 46, to: 50, emoji: "🌟", name: "Shining Master", note: "Finished all 50 fixed levels." }
+    ];
+
+    const LEVELS = LEVEL_WORDS.map((words, index) => ({
+      number: index + 1,
+      words,
+      title: index < 10 ? "Small Sprouts" : index < 20 ? "Growing Vines" : index < 30 ? "Word Paths" : index < 40 ? "Mixed Garden" : "Bloom Challenge"
+    }));
+
+    function keyOf(row, col) {
+      return `${row},${col}`;
+    }
+
+    function buildPuzzle(words) {
+      const board = new Map();
+      const placements = [];
+
+      function canPlace(word, row, col, direction) {
+        let crossings = 0;
+        for (let index = 0; index < word.length; index++) {
+          const r = row + (direction === "down" ? index : 0);
+          const c = col + (direction === "across" ? index : 0);
+          const existing = board.get(keyOf(r, c));
+          if (existing && existing.letter !== word[index]) return null;
+          if (existing && existing.letter === word[index]) crossings += 1;
+        }
+        return { crossings };
+      }
+
+      function commit(word, row, col, direction) {
+        const cells = [];
+        for (let index = 0; index < word.length; index++) {
+          const r = row + (direction === "down" ? index : 0);
+          const c = col + (direction === "across" ? index : 0);
+          const key = keyOf(r, c);
+          if (!board.has(key)) board.set(key, { row: r, col: c, letter: word[index] });
+          cells.push(key);
+        }
+        placements.push({ id: placements.length + 1, word, row, col, direction, cells });
+      }
+
+      words.forEach((word, wordIndex) => {
+        if (wordIndex === 0) {
+          commit(word, 0, 0, "across");
+          return;
+        }
+
+        const candidates = [];
+        for (const existing of board.values()) {
+          [...word].forEach((letter, letterIndex) => {
+            if (letter !== existing.letter) return;
+            ["across", "down"].forEach((direction) => {
+              const row = existing.row - (direction === "down" ? letterIndex : 0);
+              const col = existing.col - (direction === "across" ? letterIndex : 0);
+              const result = canPlace(word, row, col, direction);
+              if (!result || result.crossings === 0) return;
+              const rows = direction === "down" ? word.length : 1;
+              const cols = direction === "across" ? word.length : 1;
+              candidates.push({
+                row,
+                col,
+                direction,
+                score: result.crossings * 50 - Math.abs(row) - Math.abs(col) - rows - cols
+              });
+            });
+          });
+        }
+
+        candidates.sort((a, b) => b.score - a.score || a.row - b.row || a.col - b.col);
+        if (candidates.length) {
+          const best = candidates[0];
+          commit(word, best.row, best.col, best.direction);
+        } else {
+          const maxRow = Math.max(...[...board.values()].map((cell) => cell.row));
+          commit(word, maxRow + 2, 0, "across");
+        }
+      });
+
+      const activeCells = [...board.values()];
+      const minRow = Math.min(...activeCells.map((cell) => cell.row));
+      const minCol = Math.min(...activeCells.map((cell) => cell.col));
+      activeCells.forEach((cell) => {
+        cell.row -= minRow;
+        cell.col -= minCol;
+      });
+      placements.forEach((placement) => {
+        placement.row -= minRow;
+        placement.col -= minCol;
+        placement.cells = placement.cells.map((key) => {
+          const [row, col] = key.split(",").map(Number);
+          return keyOf(row - minRow, col - minCol);
+        });
+      });
+
+      const normalizedBoard = new Map(activeCells.map((cell) => [keyOf(cell.row, cell.col), cell]));
+      const maxRow = Math.max(...activeCells.map((cell) => cell.row));
+      const maxCol = Math.max(...activeCells.map((cell) => cell.col));
+      const numberByCell = new Map();
+      let nextNumber = 1;
+      placements.forEach((placement) => {
+        const startKey = keyOf(placement.row, placement.col);
+        if (!numberByCell.has(startKey)) numberByCell.set(startKey, nextNumber++);
+        placement.number = numberByCell.get(startKey);
+      });
+
+      const cells = [];
+      for (let row = 0; row <= maxRow; row++) {
+        for (let col = 0; col <= maxCol; col++) {
+          const active = normalizedBoard.get(keyOf(row, col));
+          cells.push({
+            key: keyOf(row, col),
+            row,
+            col,
+            active: Boolean(active),
+            letter: active?.letter || "",
+            number: numberByCell.get(keyOf(row, col)) || ""
+          });
+        }
+      }
+
+      return {
+        rows: maxRow + 1,
+        cols: maxCol + 1,
+        cells,
+        placements
+      };
+    }
+
+    function loadProgress() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (parsed && Array.isArray(parsed.completed) && Array.isArray(parsed.badges)) {
+          return {
+            completed: parsed.completed,
+            badges: parsed.badges,
+            maxUnlocked: Math.max(1, Math.min(50, parsed.maxUnlocked || 1))
+          };
+        }
+      } catch {
+        // Ignore damaged local progress and start fresh.
+      }
+      return { completed: [], badges: [], maxUnlocked: 1 };
+    }
+
+    createApp({
+      setup() {
+        const view = ref("game");
+        const currentLevelNumber = ref(1);
+        const currentPlacementId = ref(1);
+        const answers = reactive({});
+        const wrongCells = ref(new Set());
+        const selectedCellKey = ref("");
+        const shakeBoard = ref(false);
+        const progress = reactive(loadProgress());
+        const modal = reactive({ show: false, type: "level", opened: false, badge: null });
+
+        const levels = LEVELS;
+        const badges = BADGES;
+
+        const currentLevel = computed(() => levels[currentLevelNumber.value - 1]);
+        const chapterNumber = computed(() => Math.ceil(currentLevelNumber.value / 5));
+        const currentChapter = computed(() => ({ title: CHAPTERS[chapterNumber.value - 1] }));
+        const chapterLevels = computed(() => {
+          const start = (chapterNumber.value - 1) * 5 + 1;
+          return levels.slice(start - 1, start + 4);
+        });
+        const chapterDoneCount = computed(() => chapterLevels.value.filter((level) => progress.completed.includes(level.number)).length);
+        const chapterProgress = computed(() => (chapterDoneCount.value / 5) * 100);
+        const completedCount = computed(() => progress.completed.length);
+
+        const puzzle = computed(() => buildPuzzle(currentLevel.value.words));
+        const placements = computed(() => puzzle.value.placements.map((placement) => ({
+          ...placement,
+          ...WORDS[placement.word]
+        })));
+        const grid = computed(() => puzzle.value);
+        const currentPlacement = computed(() => placements.value.find((placement) => placement.id === currentPlacementId.value) || placements.value[0]);
+
+        const modalIcon = computed(() => {
+          if (modal.type === "chest") return modal.opened && modal.badge ? modal.badge.emoji : "🎁";
+          return "🌼";
+        });
+        const modalTitle = computed(() => {
+          if (modal.type === "chest") return modal.opened && modal.badge ? modal.badge.name : `第 ${chapterNumber.value} 章完成`;
+          return "拼写完成";
+        });
+        const modalText = computed(() => {
+          if (modal.type === "chest") {
+            return modal.opened && modal.badge ? modal.badge.note : "章节宝箱已经准备好了。";
+          }
+          return currentLevelNumber.value >= levels.length ? "50 个固定关卡已经全部完成。" : "下一关会多一点点挑战。";
+        });
+
+        function saveProgress() {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            completed: progress.completed,
+            badges: progress.badges,
+            maxUnlocked: progress.maxUnlocked
+          }));
+        }
+
+        watch(progress, saveProgress, { deep: true });
+        watch(currentLevelNumber, () => {
+          clearLevel();
+          currentPlacementId.value = 1;
+          selectedCellKey.value = placements.value[0]?.cells[0] || "";
+          wrongCells.value = new Set();
+        });
+
+        function isCompleted(levelNumber) {
+          return progress.completed.includes(levelNumber);
+        }
+
+        function isLocked(levelNumber) {
+          return levelNumber > progress.maxUnlocked;
+        }
+
+        function hasBadge(id) {
+          return progress.badges.includes(id);
+        }
+
+        function selectCell(cell) {
+          if (!cell.active) return;
+          selectedCellKey.value = cell.key;
+          const matchingCurrent = currentPlacement.value?.cells.includes(cell.key);
+          if (!matchingCurrent) {
+            const placement = placements.value.find((item) => item.cells.includes(cell.key));
+            if (placement) currentPlacementId.value = placement.id;
+          }
+        }
+
+        function selectPlacement(id) {
+          currentPlacementId.value = id;
+          const placement = placements.value.find((item) => item.id === id);
+          if (!placement) return;
+          selectedCellKey.value = placement.cells.find((key) => !answers[key]) || placement.cells[0];
+        }
+
+        function cellClass(cell) {
+          return {
+            blank: !cell.active,
+            active: cell.active,
+            selected: cell.key === selectedCellKey.value,
+            related: cell.active && currentPlacement.value?.cells.includes(cell.key),
+            wrong: wrongCells.value.has(cell.key)
+          };
+        }
+
+        function isPlacementComplete(placement) {
+          return placement.cells.every((key, index) => (answers[key] || "").toLowerCase() === placement.word[index]);
+        }
+
+        function moveSelection(step) {
+          const placement = currentPlacement.value;
+          if (!placement) return;
+          const index = placement.cells.indexOf(selectedCellKey.value);
+          const nextIndex = Math.max(0, Math.min(placement.cells.length - 1, index + step));
+          selectedCellKey.value = placement.cells[nextIndex];
+        }
+
+        function typeLetter(letter) {
+          if (!selectedCellKey.value) {
+            selectedCellKey.value = currentPlacement.value?.cells[0] || "";
+          }
+          answers[selectedCellKey.value] = letter.toUpperCase();
+          wrongCells.value = new Set([...wrongCells.value].filter((key) => key !== selectedCellKey.value));
+          moveSelection(1);
+        }
+
+        function handleKeydown(event) {
+          if (modal.show || view.value !== "game") return;
+          if (/^[a-zA-Z]$/.test(event.key)) {
+            event.preventDefault();
+            typeLetter(event.key);
+          } else if (event.key === "Backspace") {
+            event.preventDefault();
+            if (answers[selectedCellKey.value]) {
+              answers[selectedCellKey.value] = "";
+            } else {
+              moveSelection(-1);
+              answers[selectedCellKey.value] = "";
+            }
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            checkAnswers();
+          } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            moveSelection(1);
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveSelection(-1);
+          }
+        }
+
+        function clearLevel() {
+          Object.keys(answers).forEach((key) => delete answers[key]);
+          wrongCells.value = new Set();
+          selectedCellKey.value = placements.value[0]?.cells[0] || "";
+        }
+
+        function checkAnswers() {
+          const wrong = new Set();
+          grid.value.cells.forEach((cell) => {
+            if (!cell.active) return;
+            if ((answers[cell.key] || "").toLowerCase() !== cell.letter) wrong.add(cell.key);
+          });
+          wrongCells.value = wrong;
+          if (wrong.size > 0) {
+            shakeBoard.value = true;
+            window.setTimeout(() => { shakeBoard.value = false; }, 320);
+            return;
+          }
+          completeLevel();
+        }
+
+        function completeLevel() {
+          const levelNumber = currentLevelNumber.value;
+          if (!progress.completed.includes(levelNumber)) {
+            progress.completed.push(levelNumber);
+            progress.completed.sort((a, b) => a - b);
+          }
+          progress.maxUnlocked = Math.max(progress.maxUnlocked, Math.min(50, levelNumber + 1));
+
+          const chapterIndex = Math.ceil(levelNumber / 5) - 1;
+          const chapterComplete = levelNumber % 5 === 0;
+          const badge = BADGES[chapterIndex];
+          if (chapterComplete && badge && !progress.badges.includes(badge.id)) {
+            modal.show = true;
+            modal.type = "chest";
+            modal.opened = false;
+            modal.badge = badge;
+          } else {
+            modal.show = true;
+            modal.type = "level";
+            modal.opened = true;
+            modal.badge = null;
+          }
+        }
+
+        function openChest() {
+          if (!modal.badge) return;
+          if (!progress.badges.includes(modal.badge.id)) progress.badges.push(modal.badge.id);
+          modal.opened = true;
+        }
+
+        function continueAfterModal() {
+          modal.show = false;
+          if (currentLevelNumber.value >= levels.length) {
+            view.value = "badges";
+            return;
+          }
+          goToLevel(currentLevelNumber.value + 1);
+        }
+
+        function goToLevel(levelNumber) {
+          if (isLocked(levelNumber)) return;
+          currentLevelNumber.value = levelNumber;
+          view.value = "game";
+          nextTick(() => {
+            selectedCellKey.value = placements.value[0]?.cells[0] || "";
+          });
+        }
+
+        function resetProgress() {
+          if (!window.confirm("确定要清空所有关卡和徽章进度吗？")) return;
+          progress.completed.splice(0);
+          progress.badges.splice(0);
+          progress.maxUnlocked = 1;
+          currentLevelNumber.value = 1;
+          view.value = "game";
+          clearLevel();
+        }
+
+        onMounted(() => {
+          window.addEventListener("keydown", handleKeydown);
+          currentLevelNumber.value = Math.min(progress.maxUnlocked, levels.length);
+          nextTick(() => {
+            selectedCellKey.value = placements.value[0]?.cells[0] || "";
+          });
+        });
+
+        return {
+          answers,
+          badges,
+          cellClass,
+          chapterDoneCount,
+          chapterNumber,
+          chapterProgress,
+          checkAnswers,
+          clearLevel,
+          completedCount,
+          continueAfterModal,
+          currentChapter,
+          currentLevel,
+          currentLevelNumber,
+          currentPlacementId,
+          grid,
+          goToLevel,
+          hasBadge,
+          isCompleted,
+          isLocked,
+          isPlacementComplete,
+          levels,
+          modal,
+          modalIcon,
+          modalText,
+          modalTitle,
+          openChest,
+          placements,
+          progress,
+          resetProgress,
+          selectCell,
+          selectPlacement,
+          shakeBoard,
+          view
+        };
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>
