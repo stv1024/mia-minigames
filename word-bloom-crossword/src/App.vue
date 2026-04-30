@@ -3,10 +3,11 @@ import { ref } from "vue";
 import AppHeader from "./components/AppHeader.vue";
 import BadgeCollection from "./components/BadgeCollection.vue";
 import GameView from "./components/GameView.vue";
+import LevelListPage from "./components/LevelListPage.vue";
 import RewardModal from "./components/RewardModal.vue";
 import { useCrosswordGame } from "./composables/useCrosswordGame";
 
-const view = ref("game");
+const view = ref("levels");
 const game = useCrosswordGame({ view });
 </script>
 
@@ -15,6 +16,15 @@ const game = useCrosswordGame({ view });
     <AppHeader v-model:view="view" />
 
     <GameView v-if="view === 'game'" :game="game" />
+    <LevelListPage
+      v-else-if="view === 'levels'"
+      :current-level-number="game.currentLevelNumber"
+      :completed-count="game.completedCount"
+      :is-completed="game.isCompleted"
+      :is-locked="game.isLocked"
+      :levels="game.levels"
+      @go-to-level="game.goToLevel"
+    />
     <BadgeCollection
       v-else
       :badges="game.badges"

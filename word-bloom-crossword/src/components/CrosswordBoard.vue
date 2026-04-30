@@ -25,7 +25,7 @@ defineEmits(["select-cell"]);
   <div class="puzzle-wrap" :class="{ shake }">
     <div
       class="crossword-grid"
-      :style="{ gridTemplateColumns: `repeat(${grid.cols}, minmax(28px, 1fr))` }"
+      :style="{ gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))` }"
       role="grid"
       aria-label="crossword board"
     >

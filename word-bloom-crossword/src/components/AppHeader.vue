@@ -19,12 +19,17 @@ const emit = defineEmits(["update:view"]);
       </div>
     </div>
     <nav class="tabs" aria-label="主导航">
-      <button class="tab" :class="{ active: view === 'game' }" @click="emit('update:view', 'game')">
-        闯关
-      </button>
-      <button class="tab" :class="{ active: view === 'badges' }" @click="emit('update:view', 'badges')">
-        徽章
-      </button>
+      <template v-if="view === 'game'">
+        <button class="tab" @click="emit('update:view', 'levels')">关卡列表</button>
+      </template>
+      <template v-else>
+        <button class="tab" :class="{ active: view === 'levels' }" @click="emit('update:view', 'levels')">
+          关卡列表
+        </button>
+        <button class="tab" :class="{ active: view === 'badges' }" @click="emit('update:view', 'badges')">
+          Badge收藏
+        </button>
+      </template>
     </nav>
   </header>
 </template>

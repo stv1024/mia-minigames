@@ -198,7 +198,7 @@ export function useCrosswordGame({ view }) {
     if (!window.confirm("确定要清空所有关卡和徽章进度吗？")) return;
     progressState.resetProgress();
     currentLevelNumber.value = 1;
-    view.value = "game";
+    view.value = "levels";
     clearLevel();
   }
 

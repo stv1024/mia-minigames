@@ -126,7 +126,8 @@ h1 {
 
 .board-panel,
 .side-panel,
-.badges-panel {
+.badges-panel,
+.levels-page {
   border: 1px solid rgba(115, 98, 67, 0.16);
   border-radius: 8px;
   background: rgba(255, 253, 247, 0.86);
@@ -135,7 +136,8 @@ h1 {
 
 .board-panel,
 .side-panel,
-.badges-panel {
+.badges-panel,
+.levels-page {
   padding: 18px;
 }
 
@@ -189,6 +191,7 @@ h1 {
   place-items: center;
   min-height: 510px;
   padding: 14px;
+  overflow: hidden;
   border: 1px solid rgba(63, 125, 88, 0.12);
   border-radius: 8px;
   background:
@@ -211,7 +214,7 @@ h1 {
   display: grid;
   place-items: center;
   aspect-ratio: 1;
-  min-width: 28px;
+  min-width: 0;
   border: 1px solid transparent;
   border-radius: 6px;
 }
@@ -382,6 +385,120 @@ h1 {
   cursor: not-allowed;
 }
 
+.level-summary {
+  display: grid;
+  min-width: 120px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--soft);
+  text-align: center;
+}
+
+.level-summary strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.level-summary span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chapter-list {
+  display: grid;
+  gap: 12px;
+}
+
+.chapter-card {
+  padding: 14px;
+  border: 1px solid #dfd4bd;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.chapter-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.chapter-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.chapter-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chapter-card-progress {
+  width: min(210px, 38%);
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8e0d0;
+}
+
+.chapter-card-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--leaf), var(--sun));
+}
+
+.level-list-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.level-card {
+  display: grid;
+  gap: 5px;
+  min-height: 70px;
+  padding: 10px;
+  border: 1px solid #dfd1b5;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #f4ecd9;
+  cursor: pointer;
+  text-align: left;
+}
+
+.level-card.current {
+  color: #fff;
+  background: var(--rose);
+  border-color: var(--rose);
+}
+
+.level-card.done {
+  background: #dff0da;
+  border-color: #a8d09e;
+}
+
+.level-card.locked {
+  color: #a49a88;
+  background: #ece6dc;
+  cursor: not-allowed;
+}
+
+.level-card-number {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.level-card-title {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .badge-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(130px, 1fr));
@@ -500,8 +617,18 @@ h1 {
     min-height: 420px;
   }
 
-  .badge-grid {
+  .badge-grid,
+  .level-list-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chapter-card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chapter-card-progress {
+    width: 100%;
   }
 }
 
@@ -518,7 +645,8 @@ h1 {
 
   .board-panel,
   .side-panel,
-  .badges-panel {
+  .badges-panel,
+  .levels-page {
     padding: 12px;
   }
 
@@ -531,6 +659,10 @@ h1 {
     gap: 3px;
   }
 
+  .cell-letter {
+    font-size: clamp(14px, 5vw, 20px);
+  }
+
   .cell {
     border-radius: 5px;
   }
@@ -540,7 +672,18 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .badge-grid {
+  .badge-grid,
+  .level-list-grid {
     grid-template-columns: 1fr;
+  }
+
+  .level-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    min-height: 52px;
+  }
+
+  .level-card-title {
+    font-size: 13px;
   }
 }

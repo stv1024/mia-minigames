@@ -1,7 +1,6 @@
 <script setup>
 import ClueList from "./ClueList.vue";
 import CrosswordBoard from "./CrosswordBoard.vue";
-import LevelMap from "./LevelMap.vue";
 import StatsPanel from "./StatsPanel.vue";
 
 defineProps({
@@ -55,14 +54,6 @@ defineProps({
         <button class="primary" @click="game.checkAnswers">检查</button>
         <button class="ghost" @click="game.clearLevel">清空本关</button>
       </div>
-
-      <LevelMap
-        :current-level-number="game.currentLevelNumber"
-        :is-completed="game.isCompleted"
-        :is-locked="game.isLocked"
-        :levels="game.levels"
-        @go-to-level="game.goToLevel"
-      />
     </aside>
   </section>
 </template>
