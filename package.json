@@ -1,0 +1,13 @@
+{
+  "name": "mia-minigames",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix word-bloom-crossword install && npm --prefix word-bloom-crossword run build",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mia Minigames</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f4ee;
+      --ink: #22313f;
+      --muted: #657384;
+      --line: #d9ded8;
+      --panel: #ffffff;
+      --green: #3f8f67;
+      --blue: #4777bd;
+      --rose: #cf5f74;
+      --gold: #bd8a2a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(246,244,238,0.96)),
+        repeating-linear-gradient(90deg, rgba(63,143,103,0.08) 0 1px, transparent 1px 80px),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 36px 0 44px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 12px 0 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 4.5rem);
+      line-height: 0.96;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 420px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      text-align: right;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 26px;
+    }
+
+    .game-card {
+      min-height: 230px;
+      display: grid;
+      grid-template-rows: 128px 1fr;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: inherit;
+      text-decoration: none;
+      box-shadow: 0 10px 24px rgba(34, 49, 63, 0.08);
+      transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
+
+    .game-card:hover,
+    .game-card:focus-visible {
+      transform: translateY(-3px);
+      border-color: color-mix(in srgb, var(--accent), #22313f 18%);
+      box-shadow: 0 16px 32px rgba(34, 49, 63, 0.14);
+      outline: none;
+    }
+
+    .preview {
+      position: relative;
+      overflow: hidden;
+      background: var(--tone);
+    }
+
+    .preview::before,
+    .preview::after {
+      content: "";
+      position: absolute;
+      inset: auto;
+    }
+
+    .fishing {
+      --tone: linear-gradient(180deg, #92c782 0 46%, #327ea8 46% 100%);
+      --accent: var(--blue);
+    }
+
+    .fishing::before {
+      left: 18px;
+      right: 18px;
+      bottom: 28px;
+      height: 2px;
+      background: rgba(255,255,255,0.52);
+      box-shadow: 34px 18px 0 rgba(255,255,255,0.32), 118px 8px 0 rgba(255,255,255,0.28);
+    }
+
+    .fishing::after {
+      width: 72px;
+      height: 18px;
+      left: 36px;
+      top: 52px;
+      background: #9a6637;
+      transform: skewX(-18deg);
+      box-shadow: 48px 8px 0 #7d4e2d;
+    }
+
+    .marble {
+      --tone: #111827;
+      --accent: var(--rose);
+      background-image:
+        radial-gradient(circle at 50% 22%, #f0526e 0 12px, transparent 13px),
+        radial-gradient(circle at 27% 52%, #38bdf8 0 6px, transparent 7px),
+        radial-gradient(circle at 72% 48%, #f6c945 0 6px, transparent 7px),
+        linear-gradient(160deg, #111827, #252042);
+    }
+
+    .marble::before {
+      width: 160px;
+      height: 92px;
+      left: calc(50% - 80px);
+      bottom: 14px;
+      background: repeating-linear-gradient(90deg, #27324a 0 16px, #39445f 16px 18px);
+      clip-path: polygon(0 100%, 12% 0, 88% 0, 100% 100%);
+    }
+
+    .palworld {
+      --tone: linear-gradient(180deg, #81c7d7, #77a856);
+      --accent: var(--green);
+    }
+
+    .palworld::before {
+      width: 98px;
+      height: 52px;
+      left: 32px;
+      bottom: 26px;
+      border-radius: 50% 50% 44% 44%;
+      background: #f2c94c;
+      box-shadow: 78px -18px 0 -10px #4f8fdd;
+    }
+
+    .palworld::after {
+      width: 100%;
+      height: 34px;
+      left: 0;
+      bottom: 0;
+      background: #4f7f42;
+    }
+
+    .ring2d {
+      --tone: #f3d885;
+      --accent: var(--gold);
+      background-image:
+        radial-gradient(circle at 50% 54%, transparent 0 28px, #d65b48 29px 38px, transparent 39px),
+        radial-gradient(circle at 30% 66%, transparent 0 18px, #4f8fdd 19px 27px, transparent 28px),
+        linear-gradient(180deg, #f3d885, #e9b96b);
+    }
+
+    .ring3d {
+      --tone: linear-gradient(145deg, #232b3a, #4a6b58);
+      --accent: var(--green);
+    }
+
+    .ring3d::before {
+      width: 96px;
+      height: 54px;
+      left: calc(50% - 48px);
+      top: 36px;
+      border: 12px solid #f0c35a;
+      border-radius: 50%;
+      transform: rotateX(58deg) rotateZ(-18deg);
+    }
+
+    .claw {
+      --tone: linear-gradient(180deg, #f7bac8, #9ed4f2);
+      --accent: var(--rose);
+    }
+
+    .claw::before {
+      width: 120px;
+      height: 72px;
+      left: calc(50% - 60px);
+      bottom: 18px;
+      border: 5px solid rgba(255,255,255,0.85);
+      background: rgba(255,255,255,0.24);
+    }
+
+    .claw::after {
+      width: 44px;
+      height: 52px;
+      left: calc(50% - 22px);
+      top: 18px;
+      border-left: 5px solid #44566d;
+      border-right: 5px solid #44566d;
+      border-bottom: 5px solid #44566d;
+      border-radius: 0 0 24px 24px;
+    }
+
+    .word {
+      --tone: #fff7d7;
+      --accent: var(--green);
+      background-image:
+        linear-gradient(90deg, rgba(63,143,103,0.24) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(63,143,103,0.24) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    .word::before {
+      width: 32px;
+      height: 32px;
+      left: 48px;
+      top: 32px;
+      background: #3f8f67;
+      box-shadow:
+        32px 0 0 #3f8f67,
+        64px 0 0 #3f8f67,
+        32px 32px 0 #3f8f67,
+        32px 64px 0 #3f8f67,
+        64px 64px 0 #3f8f67;
+    }
+
+    .content {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 1.08rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .tag {
+      flex: 0 0 auto;
+      border: 1px solid color-mix(in srgb, var(--accent), #ffffff 48%);
+      border-radius: 999px;
+      color: color-mix(in srgb, var(--accent), #111827 20%);
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    footer {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100% - 20px, 520px);
+        padding-top: 20px;
+      }
+
+      header {
+        display: grid;
+        align-items: start;
+      }
+
+      .subtitle {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>Mia<br />Minigames</h1>
+      <p class="subtitle">选择一个小游戏开始。Railway 部署整个仓库时，根目录站点会导航到每个子项目路径。</p>
+    </header>
+
+    <section class="grid" aria-label="小游戏列表">
+      <a class="game-card" href="./fishing-game/">
+        <div class="preview fishing" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>钓鱼乐园</h2><span class="tag">休闲</span></div>
+          <p class="desc">投竿、等待、收集不同鱼类。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./marble-game/">
+        <div class="preview marble" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>弹珠台</h2><span class="tag">物理</span></div>
+          <p class="desc">蓄力发射弹珠，命中发光得分槽。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./palworld-2d/">
+        <div class="preview palworld" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>Palworld 2D</h2><span class="tag">冒险</span></div>
+          <p class="desc">横版探索和收集风格小游戏。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./taoquan2d/">
+        <div class="preview ring2d" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>套圈 2D</h2><span class="tag">技巧</span></div>
+          <p class="desc">控制角度和力度，把圈套到目标上。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./taoquan3dgame/">
+        <div class="preview ring3d" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>套圈 3D</h2><span class="tag">3D</span></div>
+          <p class="desc">带空间感的套圈挑战。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./zhuawawagame/">
+        <div class="preview claw" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>抓娃娃机</h2><span class="tag">街机</span></div>
+          <p class="desc">移动机械爪，瞄准并抓取奖品。</p>
+        </div>
+      </a>
+
+      <a class="game-card" href="./word-bloom-crossword/">
+        <div class="preview word" aria-hidden="true"></div>
+        <div class="content">
+          <div class="title-row"><h2>Word Bloom Crossword</h2><span class="tag">单词</span></div>
+          <p class="desc">用字母拼出正确单词，逐关解锁。</p>
+        </div>
+      </a>
+    </section>
+
+    <footer>Static entry: <code>/</code>. Vite game path: <code>/word-bloom-crossword/</code>.</footer>
+  </main>
+</body>
+</html>
