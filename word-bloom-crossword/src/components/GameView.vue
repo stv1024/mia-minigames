@@ -15,16 +15,7 @@ defineProps({
   <section class="game-layout">
     <div class="board-panel">
       <div class="level-head">
-        <div>
-          <div class="eyebrow">Chapter {{ game.chapterNumber }} · Level {{ game.currentLevel.number }}</div>
-          <h2 class="level-title">{{ game.currentChapter.title }}</h2>
-        </div>
-        <div class="chapter-track">
-          <div class="progress-line" aria-hidden="true">
-            <div class="progress-fill" :style="{ width: `${game.chapterProgress}%` }"></div>
-          </div>
-          <div class="chapter-text">{{ game.currentChapter.title }} · {{ game.chapterDoneCount }}/5</div>
-        </div>
+        <div class="game-level-label">Chapter {{ game.chapterNumber }} · Level {{ game.currentLevel.number }}</div>
       </div>
 
       <CrosswordBoard
@@ -37,11 +28,13 @@ defineProps({
     </div>
 
     <aside class="side-panel">
-      <StatsPanel
-        :badge-count="game.progress.badges.length"
-        :completed-count="game.completedCount"
-        :word-count="game.currentLevel.words.length"
-      />
+      <div class="desktop-stats">
+        <StatsPanel
+          :badge-count="game.progress.badges.length"
+          :completed-count="game.completedCount"
+          :word-count="game.currentLevel.words.length"
+        />
+      </div>
 
       <ClueList
         :current-placement-id="game.currentPlacementId"
