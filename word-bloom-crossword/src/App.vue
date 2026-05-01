@@ -19,7 +19,7 @@ const game = useCrosswordGame({ view });
     <LevelListPage
       v-else-if="view === 'levels'"
       :current-level-number="game.currentLevelNumber"
-      :completed-count="game.completedCount"
+      :has-badge="game.hasBadge"
       :is-completed="game.isCompleted"
       :is-locked="game.isLocked"
       :levels="game.levels"

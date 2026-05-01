@@ -1,11 +1,9 @@
 <script setup>
 import { computed } from "vue";
+import { badges } from "../data/badges";
+import { chapters as chapterDefinitions } from "../data/chapters";
 
 const props = defineProps({
-  completedCount: {
-    type: Number,
-    required: true,
-  },
   currentLevelNumber: {
     type: Number,
     required: true,
@@ -15,6 +13,10 @@ const props = defineProps({
     required: true,
   },
   isLocked: {
+    type: Function,
+    required: true,
+  },
+  hasBadge: {
     type: Function,
     required: true,
   },
@@ -32,12 +34,18 @@ const chapters = computed(() => {
     const levels = props.levels.slice(index, index + 5);
     groups.push({
       number: Math.floor(index / 5) + 1,
+      title: chapterDefinitions[Math.floor(index / 5)]?.title ?? `Chapter ${Math.floor(index / 5) + 1}`,
       levels,
-      completed: levels.filter((level) => props.isCompleted(level.number)).length,
+      badge: badges[Math.floor(index / 5)],
     });
   }
   return groups;
 });
+
+function chestState(chapter) {
+  if (chapter.badge && props.hasBadge(chapter.badge.id)) return "claimed";
+  return "locked";
+}
 </script>
 
 <template>
@@ -47,21 +55,17 @@ const chapters = computed(() => {
         <div class="eyebrow">Level Select</div>
         <h2 class="level-title">关卡列表</h2>
       </div>
-      <div class="level-summary">
-        <strong>{{ completedCount }}/{{ levels.length }}</strong>
-        <span>已完成</span>
-      </div>
     </div>
 
     <div class="chapter-list">
       <article v-for="chapter in chapters" :key="chapter.number" class="chapter-card">
         <div class="chapter-card-head">
           <div>
-            <h3>Chapter {{ chapter.number }}</h3>
-            <span>{{ chapter.completed }}/{{ chapter.levels.length }} completed</span>
+            <h3>Chapter {{ chapter.number }} · {{ chapter.title }}</h3>
           </div>
-          <div class="chapter-card-progress" aria-hidden="true">
-            <div :style="{ width: `${(chapter.completed / chapter.levels.length) * 100}%` }"></div>
+
+          <div class="chapter-reward" :class="chestState(chapter)">
+            {{ chestState(chapter) === "claimed" && chapter.badge ? chapter.badge.emoji : "🎁" }}
           </div>
         </div>
 
@@ -79,7 +83,6 @@ const chapters = computed(() => {
             @click="$emit('go-to-level', level.number)"
           >
             <span class="level-card-number">{{ isLocked(level.number) ? "🔒" : level.number }}</span>
-            <span class="level-card-title">{{ level.title }}</span>
           </button>
         </div>
       </article>

@@ -17,7 +17,7 @@ defineProps({
       <div class="level-head">
         <div>
           <div class="eyebrow">Chapter {{ game.chapterNumber }} · Level {{ game.currentLevel.number }}</div>
-          <h2 class="level-title">{{ game.currentLevel.title }}</h2>
+          <h2 class="level-title">{{ game.currentChapter.title }}</h2>
         </div>
         <div class="chapter-track">
           <div class="progress-line" aria-hidden="true">
