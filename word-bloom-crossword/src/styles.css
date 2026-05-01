@@ -391,6 +391,7 @@ h1 {
 }
 
 .chapter-card {
+  position: relative;
   padding: 14px;
   border: 1px solid #dfd4bd;
   border-radius: 8px;
@@ -410,11 +411,6 @@ h1 {
   font-size: 18px;
 }
 
-.chapter-card span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .chapter-reward {
   display: grid;
   width: 48px;
@@ -423,13 +419,54 @@ h1 {
   border: 1px solid #d9c9aa;
   border-radius: 8px;
   background: #fff4cf;
+  cursor: pointer;
   font-size: 26px;
   line-height: 1;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chapter-reward:hover,
+.chapter-reward[aria-expanded="true"] {
+  border-color: #e0a84d;
+  background: #fff0b8;
+  box-shadow: 0 0 0 2px rgba(224, 168, 77, 0.14);
+}
+
+.chapter-reward:active {
+  transform: scale(0.94);
 }
 
 .chapter-reward.claimed {
   border-color: #a8d09e;
   background: #e9f6e3;
+}
+
+.chapter-reward.claimed:hover,
+.chapter-reward.claimed[aria-expanded="true"] {
+  border-color: #8abd7e;
+  background: #ddf1d5;
+  box-shadow: 0 0 0 2px rgba(123, 177, 109, 0.16);
+}
+
+.chapter-reward-note {
+  display: grid;
+  gap: 3px;
+  margin: -2px 0 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(217, 201, 170, 0.8);
+  border-radius: 8px;
+  background: #fffdf7;
+}
+
+.chapter-reward-note strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.chapter-reward-note span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .level-list-grid {
@@ -469,7 +506,8 @@ h1 {
 }
 
 .level-card-number {
-  font-size: 20px;
+  color: inherit;
+  font-size: 24px;
   font-weight: 800;
   line-height: 1;
 }
@@ -657,6 +695,6 @@ h1 {
   }
 
   .level-card-number {
-    font-size: 16px;
+    font-size: 22px;
   }
 }
