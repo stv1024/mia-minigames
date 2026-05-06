@@ -282,6 +282,56 @@ h1 {
   text-transform: uppercase;
 }
 
+.letter-tray {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(63, 125, 88, 0.16);
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.letter-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.letter-card {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #d1bf9c;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fffefa;
+  box-shadow: 0 4px 10px rgba(80, 65, 40, 0.13);
+  cursor: grab;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.letter-card:active {
+  cursor: grabbing;
+  transform: translateY(1px);
+}
+
+.letter-card.selected {
+  border-color: var(--rose);
+  background: #ffe9ef;
+  box-shadow: 0 0 0 3px rgba(217, 88, 117, 0.18);
+}
+
+.letter-card.used {
+  color: #857966;
+  background: #eee6d8;
+  box-shadow: none;
+  cursor: pointer;
+  opacity: 0.52;
+}
+
 .stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -734,6 +784,21 @@ h1 {
 
   .cell {
     border-radius: 5px;
+  }
+
+  .letter-tray {
+    margin-top: 8px;
+    padding: 9px;
+  }
+
+  .letter-card-grid {
+    gap: 6px;
+  }
+
+  .letter-card {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
   }
 
   .stat-row,

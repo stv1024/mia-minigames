@@ -1,6 +1,7 @@
 <script setup>
 import ClueList from "./ClueList.vue";
 import CrosswordBoard from "./CrosswordBoard.vue";
+import LetterTray from "./LetterTray.vue";
 import StatsPanel from "./StatsPanel.vue";
 
 defineProps({
@@ -23,7 +24,14 @@ defineProps({
         :cell-class="game.cellClass"
         :grid="game.grid"
         :shake="game.shakeBoard"
+        @drop-tile="(cell, tileId) => game.placeTileOnCell(tileId, cell.key)"
         @select-cell="game.selectCell"
+      />
+
+      <LetterTray
+        :selected-tile-id="game.selectedTileId"
+        :tiles="game.letterTiles"
+        @select-tile="game.selectTile"
       />
     </div>
 

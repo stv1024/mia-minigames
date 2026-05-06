@@ -10,8 +10,11 @@ export function useCrosswordGame({ view }) {
   const currentLevelNumber = ref(1);
   const currentPlacementId = ref(1);
   const answers = reactive({});
+  const cellTileIds = reactive({});
+  const letterTiles = ref([]);
   const wrongCells = ref(new Set());
   const selectedCellKey = ref("");
+  const selectedTileId = ref("");
   const shakeBoard = ref(false);
   const modal = reactive({ show: false, type: "level", opened: false, badge: null });
   const progressState = useProgress();
@@ -41,14 +44,54 @@ export function useCrosswordGame({ view }) {
     placements.value.find((placement) => placement.id === currentPlacementId.value) || placements.value[0]
   ));
 
+  function shuffleTiles(tiles) {
+    return [...tiles].sort(() => Math.random() - 0.5);
+  }
+
+  function resetLetterTiles() {
+    letterTiles.value = shuffleTiles(
+      grid.value.cells
+        .filter((cell) => cell.active)
+        .map((cell, index) => ({
+          id: `${currentLevelNumber.value}-${index}-${cell.key}`,
+          letter: cell.letter.toUpperCase(),
+          usedCellKey: "",
+        }))
+    );
+  }
+
+  function releaseTileForCell(cellKey) {
+    const tileId = cellTileIds[cellKey];
+    if (!tileId) return;
+
+    const tile = letterTiles.value.find((item) => item.id === tileId);
+    if (tile) tile.usedCellKey = "";
+    delete cellTileIds[cellKey];
+  }
+
+  function clearCell(cellKey) {
+    releaseTileForCell(cellKey);
+    answers[cellKey] = "";
+    wrongCells.value = new Set([...wrongCells.value].filter((key) => key !== cellKey));
+  }
+
   function clearLevel() {
     Object.keys(answers).forEach((key) => delete answers[key]);
+    Object.keys(cellTileIds).forEach((key) => delete cellTileIds[key]);
     wrongCells.value = new Set();
+    selectedTileId.value = "";
     selectedCellKey.value = placements.value[0]?.cells[0] || "";
+    resetLetterTiles();
   }
 
   function selectCell(cell) {
     if (!cell.active) return;
+
+    if (selectedTileId.value) {
+      placeTileOnCell(selectedTileId.value, cell.key);
+      return;
+    }
+
     selectedCellKey.value = cell.key;
     if (currentPlacement.value?.cells.includes(cell.key)) return;
 
@@ -89,9 +132,56 @@ export function useCrosswordGame({ view }) {
 
   function typeLetter(letter) {
     if (!selectedCellKey.value) selectedCellKey.value = currentPlacement.value?.cells[0] || "";
-    answers[selectedCellKey.value] = letter.toUpperCase();
+    const typedLetter = letter.toUpperCase();
+    selectedTileId.value = "";
+    releaseTileForCell(selectedCellKey.value);
+    answers[selectedCellKey.value] = typedLetter;
+    const matchingTile = letterTiles.value.find((tile) => !tile.usedCellKey && tile.letter === typedLetter);
+    if (matchingTile) {
+      matchingTile.usedCellKey = selectedCellKey.value;
+      cellTileIds[selectedCellKey.value] = matchingTile.id;
+    }
     wrongCells.value = new Set([...wrongCells.value].filter((key) => key !== selectedCellKey.value));
     moveSelection(1);
+  }
+
+  function placeTileOnCell(tileId, cellKey) {
+    const tile = letterTiles.value.find((item) => item.id === tileId);
+    const targetCell = grid.value.cells.find((cell) => cell.key === cellKey);
+    if (!tile || !targetCell?.active) return;
+
+    if (tile.usedCellKey && tile.usedCellKey !== cellKey) {
+      answers[tile.usedCellKey] = "";
+      delete cellTileIds[tile.usedCellKey];
+    }
+
+    releaseTileForCell(cellKey);
+    tile.usedCellKey = cellKey;
+    cellTileIds[cellKey] = tile.id;
+    answers[cellKey] = tile.letter;
+    selectedTileId.value = "";
+    selectedCellKey.value = cellKey;
+    wrongCells.value = new Set([...wrongCells.value].filter((key) => key !== cellKey));
+    moveSelection(1);
+  }
+
+  function selectTile(tileId) {
+    const tile = letterTiles.value.find((item) => item.id === tileId);
+    if (!tile) return;
+
+    if (tile.usedCellKey) {
+      selectedTileId.value = "";
+      const cell = grid.value.cells.find((item) => item.key === tile.usedCellKey);
+      if (cell) selectCell(cell);
+      return;
+    }
+
+    if (selectedCellKey.value && !answers[selectedCellKey.value]) {
+      placeTileOnCell(tileId, selectedCellKey.value);
+      return;
+    }
+
+    selectedTileId.value = selectedTileId.value === tileId ? "" : tileId;
   }
 
   function handleKeydown(event) {
@@ -106,10 +196,10 @@ export function useCrosswordGame({ view }) {
     if (event.key === "Backspace") {
       event.preventDefault();
       if (answers[selectedCellKey.value]) {
-        answers[selectedCellKey.value] = "";
+        clearCell(selectedCellKey.value);
       } else {
         moveSelection(-1);
-        answers[selectedCellKey.value] = "";
+        clearCell(selectedCellKey.value);
       }
       return;
     }
@@ -211,6 +301,7 @@ export function useCrosswordGame({ view }) {
     window.addEventListener("keydown", handleKeydown);
     currentLevelNumber.value = Math.min(progress.maxUnlocked, levels.length);
     nextTick(() => {
+      resetLetterTiles();
       selectedCellKey.value = placements.value[0]?.cells[0] || "";
     });
   });
@@ -228,6 +319,7 @@ export function useCrosswordGame({ view }) {
     chapterProgress,
     checkAnswers,
     clearLevel,
+    cellTileIds,
     completedCount,
     continueAfterModal,
     currentChapter,
@@ -240,14 +332,18 @@ export function useCrosswordGame({ view }) {
     isCompleted: progressState.isCompleted,
     isLocked: progressState.isLocked,
     isPlacementComplete,
+    letterTiles,
     levels,
     modal,
     openChest,
     placements,
+    placeTileOnCell,
     progress,
     resetProgress,
     selectCell,
     selectPlacement,
+    selectTile,
+    selectedTileId,
     shakeBoard,
   });
 }

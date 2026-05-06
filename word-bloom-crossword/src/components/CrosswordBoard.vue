@@ -18,7 +18,7 @@ defineProps({
   },
 });
 
-defineEmits(["select-cell"]);
+defineEmits(["drop-tile", "select-cell"]);
 </script>
 
 <template>
@@ -36,6 +36,8 @@ defineEmits(["select-cell"]);
         :class="cellClass(cell)"
         :disabled="!cell.active"
         :style="{ gridColumn: cell.col + 1, gridRow: cell.row + 1 }"
+        @dragover.prevent
+        @drop.prevent="$emit('drop-tile', cell, $event.dataTransfer.getData('text/plain'))"
         @click="$emit('select-cell', cell)"
       >
         <span v-if="cell.number" class="cell-number">{{ cell.number }}</span>
